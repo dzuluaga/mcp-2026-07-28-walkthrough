@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const src = f => fs.readFileSync(new URL('./src/' + f, import.meta.url), 'utf8');
-const files = ['lessons.js', 'extras.js', 'practice.js', 'core-lessons.js', 'helpers.js', 'render.js'].filter(f => fs.existsSync(new URL('./src/' + f, import.meta.url)));
+const files = ['lessons.js', 'extras.js', 'practice.js', 'core-lessons.js', 'audio.js', 'helpers.js', 'render.js'].filter(f => fs.existsSync(new URL('./src/' + f, import.meta.url)));
 const shared = files.map(src).join('\n');
 
 const ctx = vm.createContext({});

@@ -96,6 +96,8 @@ function lessonBody(l) {
   const T = Object.fromEntries(sectionsOf(l)), list = inTrack(l), i = list.indexOf(l);
   let h = '<div class="kick"><span class="chip ' + l.tag + '">' + esc(l.tagLabel) + '</span><span class="chip domain">' + esc(l.domain) + '</span><span class="pos">' + esc(trackOf(l).label) + ' · ' + (i + 1) + ' / ' + list.length + '</span></div>';
   h += '<h1 id="top">' + esc(l.title) + '</h1><p class="lede">' + esc(l.lede) + '</p>';
+  const au = typeof audioUrl === 'function' && audioUrl(l);
+  if (au) h += '<p class="listen"><a class="listen-btn" href="' + au + '" target="_blank" rel="noopener"><span class="listen-ico" aria-hidden="true">🎧</span><span><strong>Listen to this lesson</strong><small>Audio overview in Gemini Notebook · about 15–25 min · opens in a new tab</small></span></a></p>';
   const X = extrasOf(l);
   if (X.tldr) h += '<aside class="tldr" aria-label="Exam TL;DR"><p class="tldr-h">Exam TL;DR</p><ul>' + X.tldr.map(t => '<li>' + esc(t) + '</li>').join('') + '</ul></aside>';
   if (X.story) h += sec('real-life', 'In real life', '<div class="story"><p class="story-t">' + esc(X.story.title) + '</p><div class="prose">' + X.story.html + '</div></div>');
@@ -148,7 +150,7 @@ function trackGrid(t) {
   return '<section class="track" id="' + t.id + '"><div class="track-h"><p class="eyebrow">' + esc(t.label) + '</p><h2>' + esc(t.name) + '</h2><p>' + esc(t.blurb) + '</p></div>' +
     '<ol class="lesson-grid">' + ALL.filter(l => l.track === t.id).map(l =>
       '<li><a class="lcard" href="' + lessonUrl(l) + '" data-lesson="' + l.id + '"><span class="lc-top"><span class="n">' + numOf(l) + '</span><span class="chip ' + l.tag + '">' + esc(l.tagLabel) + '</span><span class="ok"></span></span>' +
-      '<strong>' + esc(l.short) + '</strong><span class="lc-d">' + esc(l.lede) + '</span></a></li>').join('') + '</ol></section>';
+      '<strong>' + esc(l.short) + (typeof audioUrl === 'function' && audioUrl(l) ? ' <span class="lc-audio" title="Has an audio overview">🎧</span>' : '') + '</strong><span class="lc-d">' + esc(l.lede) + '</span></a></li>').join('') + '</ol></section>';
 }
 
 function indexBody() {
