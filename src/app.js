@@ -21,8 +21,8 @@ function paintProgress() {
 }
 
 function paintQuizzes() {
-  if (!lesson || !lesson.quiz) return;
-  lesson.quiz.forEach((q, qi) => {
+  if (!lesson) return;
+  quizzesOf(lesson).forEach((q, qi) => {
     const el = document.getElementById('q' + (qi + 1));
     const picked = state.quiz[lesson.id + ':' + qi];
     if (el && picked !== undefined) el.outerHTML = quizHTML(lesson, q, qi, picked);
@@ -72,12 +72,20 @@ document.addEventListener('click', e => {
   }
   if (t.dataset.opt !== undefined && lesson) {
     const qi = +t.closest('.q').dataset.q; state.quiz[lesson.id + ':' + qi] = +t.dataset.opt; save();
-    t.closest('.q').outerHTML = quizHTML(lesson, lesson.quiz[qi], qi, +t.dataset.opt);
+    const box = t.closest('.q'), id = box.id;
+    box.outerHTML = quizHTML(lesson, quizzesOf(lesson)[qi], qi, +t.dataset.opt);
+    const nb = document.getElementById(id); if (nb) nb.querySelector('.q-reset')?.focus({ preventScroll: true });
+    const Q = quizzesOf(lesson);
+    const allRight = Q.every((q, i) => state.quiz[lesson.id + ':' + i] === q.a);
+    if (allRight && !state.learned.includes(lesson.id)) {
+      state.learned = state.learned.concat(lesson.id); save(); paintProgress();
+      toast('All ' + Q.length + ' correct. Lesson marked as learned.');
+    }
     return;
   }
   if (t.dataset.reset !== undefined && lesson) {
     const qi = +t.dataset.reset; delete state.quiz[lesson.id + ':' + qi]; save();
-    t.closest('.q').outerHTML = quizHTML(lesson, lesson.quiz[qi], qi);
+    t.closest('.q').outerHTML = quizHTML(lesson, quizzesOf(lesson)[qi], qi);
     return;
   }
   if (t.id === 'learnBtn') {
@@ -97,7 +105,8 @@ const pick = document.getElementById('lessonPick');
 if (pick) pick.addEventListener('change', () => { location.href = pick.value; });
 
 document.addEventListener('keydown', e => {
-  if (e.target.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  if (e.target !== document.body && e.target.closest('input, select, textarea, pre, .fig-scroll, button, a, [tabindex], details')) return;
   if (e.key === 'ArrowRight' && body.dataset.next) location.href = body.dataset.next;
   if (e.key === 'ArrowLeft' && body.dataset.prev) location.href = body.dataset.prev;
 });

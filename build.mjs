@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const src = f => fs.readFileSync(new URL('./src/' + f, import.meta.url), 'utf8');
-const shared = src('lessons.js') + '\n' + src('helpers.js') + '\n' + src('render.js');
+const shared = src('lessons.js') + '\n' + src('extras.js') + '\n' + src('helpers.js') + '\n' + src('render.js');
 
 const ctx = vm.createContext({});
 vm.runInContext(shared + '\nglobalThis.__ = { LESSONS, pageHTML, lessonUrl };', ctx);

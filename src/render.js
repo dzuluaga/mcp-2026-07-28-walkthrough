@@ -3,20 +3,33 @@ const SITE_TITLE = 'MCP 2026-07-28 Walkthrough';
 const slug = s => String(s).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
 const lessonUrl = l => '/' + l.id + '/';
 
+const extrasOf = l => (typeof EXTRAS !== 'undefined' && EXTRAS[l.id]) || {};
+const quizzesOf = l => (l.quiz || []).concat(extrasOf(l).moreQuiz || []);
+
+/* Deterministic shuffle so the correct answer isn't always in the same slot.
+   Seeded by lesson + question, so the order is stable between visits. */
+function optionOrder(seedText, n) {
+  let h = 2166136261;
+  for (const c of seedText) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  const idx = [...Array(n).keys()];
+  for (let i = n - 1; i > 0; i--) { h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0; const j = h % (i + 1); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  return idx;
+}
+
 function lnk(anchor, label) {
   return '<button type="button" class="lnk" data-link="' + anchor + '" aria-label="Copy link to ' + esc(label || 'this section') + '" title="Copy link">#</button>';
 }
 
 function sectionsOf(l) {
   const s = [];
+  if (extrasOf(l).story) s.push(['real-life', 'In real life']);
   if (l.what) s.push(['what', l.id === 'wrap' ? 'The migration, in order' : 'What changed']);
   if (l.why) s.push(['why', 'Why it changed']);
   if (l.seq) s.push(['wire', 'On the wire']);
   if (l.payloads) s.push(['payloads', 'Payloads, before and after']);
   if (l.impact) s.push(['impact', 'What it does to an existing server']);
   if (l.test) s.push(['test', 'How to test it']);
-  if (l.exciting) s.push(['exciting', 'Why it\'s exciting']);
-  if (l.quiz) s.push(['quiz', 'Check yourself']);
+  if (quizzesOf(l).length) s.push(['quiz', 'Check yourself']);
   if (l.links) s.push(['spec', 'Read the spec']);
   return s;
 }
@@ -24,21 +37,22 @@ function sectionsOf(l) {
 function railHTML(cur) {
   return LESSONS.map((l, i) => {
     let li = '<li><a class="lesson" href="' + lessonUrl(l) + '" data-lesson="' + l.id + '"' + (i === cur ? ' aria-current="page"' : '') + '><span class="n">' + String(i).padStart(2, '0') +
-      '</span><span><span class="dot ' + l.tag + '"></span>' + esc(l.short) + '</span><span class="ok"></span></a>';
+      '</span><span><span class="dot ' + l.tag + '" title="' + esc(l.tagLabel) + '"><span class="sr-only">' + esc(l.tagLabel) + ': </span></span>' + esc(l.short) + '</span><span class="ok"></span></a>';
     if (i === cur) li += '<ul class="toc">' + sectionsOf(l).map(([k, t]) => '<li><a href="#' + k + '" data-toc="' + k + '">' + esc(t) + '</a></li>').join('') + '</ul>';
     return li + '</li>';
   }).join('');
 }
 
 function sec(key, title, html) {
-  return '<section class="sec" id="' + key + '"><h2 class="sec-h"><a class="hl" href="#' + key + '">' + title + '</a>' + lnk(key, title) + '</h2>' + html + '</section>';
+  return '<section class="sec" id="' + key + '"><div class="sec-h"><h2><a class="hl" href="#' + key + '">' + title + '</a></h2>' + lnk(key, title) + '</div>' + html + '</section>';
 }
 
 function quizHTML(l, q, qi, picked) {
   const answered = picked !== undefined && picked !== null;
   const a = 'q' + (qi + 1);
-  return '<div class="q" id="' + a + '" data-q="' + qi + '"><p class="q-t">' + esc(q.q) + lnk(a, 'question ' + (qi + 1)) + '</p><div class="opts">' +
-    q.o.map((o, oi) => '<button type="button" class="opt' + (answered ? (oi === q.a ? ' right' : oi === picked ? ' wrong' : '') : '') + '" data-opt="' + oi + '"' + (answered ? ' disabled' : '') + '>' + esc(o) + '</button>').join('') +
+  const letters = 'ABCD';
+  return '<div class="q" id="' + a + '" data-q="' + qi + '"><p class="q-t"><span class="q-n">Q' + (qi + 1) + '</span>' + esc(q.q) + lnk(a, 'question ' + (qi + 1)) + '</p><div class="opts">' +
+    optionOrder(l.id + ':' + qi + ':' + q.q, q.o.length).map((oi, pos) => '<button type="button" class="opt' + (answered ? (oi === q.a ? ' right' : oi === picked ? ' wrong' : '') : '') + '" data-opt="' + oi + '"' + (answered ? ' disabled' : '') + '><span class="opt-l" aria-hidden="true">' + letters[pos] + '</span>' + esc(q.o[oi]) + '</button>').join('') +
     '</div>' + (answered ? '<p class="q-x">' + (picked === q.a ? '<b>Correct.</b> ' : '<b>Not quite.</b> ') + q.x + '</p><button type="button" class="q-reset" data-reset="' + qi + '">Try again</button>' : '') + '</div>';
 }
 
@@ -47,16 +61,20 @@ function lessonBody(i) {
   const T = Object.fromEntries(sectionsOf(l));
   let h = '<div class="kick"><span class="chip ' + l.tag + '">' + esc(l.tagLabel) + '</span><span class="chip domain">' + esc(l.domain) + '</span><span class="pos">' + (i + 1) + ' / ' + LESSONS.length + '</span></div>';
   h += '<h1 id="top">' + esc(l.title) + '</h1><p class="lede">' + esc(l.lede) + '</p>';
+  const X = extrasOf(l);
+  if (X.tldr) h += '<aside class="tldr" aria-label="Exam TL;DR"><p class="tldr-h">Exam TL;DR</p><ul>' + X.tldr.map(t => '<li>' + esc(t) + '</li>').join('') + '</ul></aside>';
+  if (X.story) h += sec('real-life', 'In real life', '<div class="story"><p class="story-t">' + esc(X.story.title) + '</p><div class="prose">' + X.story.html + '</div></div>');
   if (l.what) h += sec('what', T.what, '<div class="prose">' + l.what + '</div>');
   if (l.extra) h += '<section class="sec">' + l.extra + '</section>';
   if (l.why) h += sec('why', T.why, '<div class="call why prose">' + l.why + '</div>');
   if (l.seq) {
     const s = l.seq, both = s.before && s.after;
     h += sec('wire', T.wire, '<figure class="fig" style="margin:0"><div class="fig-bar"><strong>' + (both ? 'Same job, two eras' : 'Message flow in 2026-07-28') + '</strong>' +
-      (both ? '<div class="seg" role="group" aria-label="Protocol era"><button type="button" data-era="before" aria-pressed="false">Legacy</button><button type="button" data-era="after" aria-pressed="true">2026-07-28</button></div>' : '') +
-      '</div><div class="fig-scroll">' + (s.before ? '<div data-pane="before"' + (both ? ' hidden' : '') + '>' + seqSVG(s.before) + '</div>' : '') +
-      (s.after ? '<div data-pane="after">' + seqSVG(s.after) + '</div>' : '') + '</div>' +
-      '<figcaption class="fig-cap">Solid arrows are requests, dashed are responses or notifications. <span style="color:var(--del)">Struck-through red</span> is gone; <span style="color:var(--add)">green</span> is new.</figcaption></figure>');
+      (both ? '<div class="seg-wrap"><span class="seg-l" id="seg-l">Compare</span><div class="seg" role="group" aria-labelledby="seg-l"><button type="button" data-era="before" aria-pressed="true">Legacy</button><button type="button" data-era="after" aria-pressed="false">2026-07-28</button></div></div>' : '') +
+      '</div>' + (both ? '<p class="fig-prompt">This is the old flow. Before you switch to <strong>2026-07-28</strong>, try to predict what disappears and what replaces it.</p>' : '') +
+      '<div class="fig-scroll" tabindex="0" role="region" aria-label="Sequence diagram, scrolls sideways">' + (s.before ? '<div data-pane="before">' + seqSVG(s.before) + '</div>' : '') +
+      (s.after ? '<div data-pane="after"' + (both ? ' hidden' : '') + '>' + seqSVG(s.after) + '</div>' : '') + '</div>' +
+      '<figcaption class="fig-cap">Solid arrows are requests, dashed are responses or notifications. <span style="color:var(--del)">Red ✕</span> is gone; <span style="color:var(--add)">green</span> is new.</figcaption></figure>');
   }
   if (l.payloads) {
     h += sec('payloads', T.payloads, l.payloads.map(p => {
@@ -67,10 +85,13 @@ function lessonBody(i) {
     }).join(''));
   }
   if (l.impact) h += sec('impact', T.impact, '<div class="call impact prose">' + l.impact + '</div>');
-  if (l.test) h += sec('test', T.test, (l.test.intro ? '<div class="prose">' + l.test.intro + '</div>' : '') +
+  if (l.test) h += sec('test', T.test,
+    '<details class="setup"' + (l.id === 'handshake' ? ' open' : '') + '><summary>' + (l.id === 'handshake' ? 'Set up the test helper (once per terminal)' : 'First time here? Set up the test helper (once per terminal)') + '</summary>' +
+      codeBlock({ text: TEST_SETUP, lang: 'sh' }, 'Setup', 'shell', 'test-setup') + '</details>' +
+    (l.test.intro ? '<div class="prose">' + l.test.intro + '</div>' : '') +
     l.test.blocks.map(b => codeBlock({ text: b.text, lang: 'sh' }, b.label, 'shell', 'test-' + slug(b.label))).join(''));
-  if (l.exciting) h += sec('exciting', T.exciting, '<div class="call excite prose">' + l.exciting + '</div>');
-  if (l.quiz) h += sec('quiz', T.quiz, l.quiz.map((q, qi) => quizHTML(l, q, qi)).join(''));
+  const Q = quizzesOf(l);
+  if (Q.length) h += sec('quiz', T.quiz, '<p class="quiz-note">Answer all ' + Q.length + ' correctly and this lesson is marked as learned.</p>' + Q.map((q, qi) => quizHTML(l, q, qi)).join(''));
   if (l.links) h += sec('spec', T.spec, '<div class="links">' + l.links.map(([t, u]) => '<a href="' + u + '" target="_blank" rel="noopener">' + esc(t) + ' ↗</a>').join('') + '</div>');
   const prev = LESSONS[i - 1], next = LESSONS[i + 1];
   h += '<div class="nav">' +
@@ -107,14 +128,14 @@ function pageHTML(opts) {
     '<link rel="stylesheet" href="/style.css">' +
     (prev ? '<link rel="prev" href="' + lessonUrl(prev) + '">' : '') + (next ? '<link rel="next" href="' + lessonUrl(next) + '">' : '') +
     '</head><body data-lesson="' + (l ? l.id : '') + '" data-prev="' + (prev ? lessonUrl(prev) : '') + '" data-next="' + (next ? lessonUrl(next) : '') + '">' +
-    '<header class="top"><div class="top-in"><a class="brand" href="/">MCP 2026-07-28 <small>one change per page</small></a>' +
+    '<a class="skip" href="#main">Skip to content</a><header class="top"><div class="top-in"><a class="brand" href="/">MCP 2026-07-28 <small>one change per page</small></a>' +
     '<button type="button" class="here" id="hereBtn" title="Copy a link to the section you are reading">Copy link to here</button>' +
     '<div class="prog" aria-live="polite"><span id="progTxt">' + LESSONS.length + ' lessons</span><span class="bar"><i id="progBar"></i></span></div>' +
-    (l ? '<div class="pick"><label for="lessonPick" hidden>Lesson</label><select id="lessonPick">' + LESSONS.map((x, i) => '<option value="' + lessonUrl(x) + '"' + (i === cur ? ' selected' : '') + '>' + String(i).padStart(2, '0') + ' · ' + esc(x.short) + '</option>').join('') + '</select></div>' : '') +
+    (l ? '<div class="pick"><select id="lessonPick" aria-label="Jump to lesson">' + LESSONS.map((x, i) => '<option value="' + lessonUrl(x) + '"' + (i === cur ? ' selected' : '') + '>' + String(i).padStart(2, '0') + ' · ' + esc(x.short) + '</option>').join('') + '</select></div>' : '') +
     '</div></header>' +
     (l
       ? '<div class="shell"><nav class="rail" aria-label="Lessons"><h2><a href="/">Lessons</a></h2><ol id="railList">' + railHTML(cur) + '</ol>' +
-        '<div class="legend"><div><span class="dot breaking"></span>Breaks a running server</div><div><span class="dot quiet"></span>Fails quietly or needs a tweak</div><div><span class="dot new"></span>New capability</div><div><span class="dot deprecated"></span>Deprecated, 12-month clock</div></div></nav>' +
+        '<div class="legend" aria-hidden="true"><div><span class="dot breaking"></span>Breaks a running server</div><div><span class="dot quiet"></span>Fails quietly or needs a tweak</div><div><span class="dot new"></span>New or redesigned</div><div><span class="dot deprecated"></span>Deprecated or shifting</div><div><span class="dot orientation"></span>Orientation and review</div></div></nav>' +
         '<main id="main">' + lessonBody(cur) + '</main></div>'
       : '<main class="home" id="main">' + (opts.body || indexBody()) + '</main>') +
     '<div class="toast" id="toast" role="status" hidden></div><script src="/app.js" defer></script></body></html>';

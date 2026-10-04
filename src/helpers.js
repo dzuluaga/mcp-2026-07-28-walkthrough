@@ -46,7 +46,7 @@ function codeBlock(b, label, era, anchor) {
   const id = codeStore.push(lines.map(l => l.text).join('\n')) - 1;
   return '<div class="code-wrap"' + (anchor ? ' id="' + anchor + '"' : '') + '><div class="code-head">' + (era ? '<span class="era ' + era + '">' + (era === 'legacy' ? 'Legacy' : era === 'modern' ? '2026-07-28' : 'Shell') + '</span>' : '') +
     '<span>' + esc(label || '') + '</span>' + (anchor ? lnk(anchor, label) : '') + '<button class="copy" data-copy="' + id + '" type="button">Copy</button></div>' +
-    '<pre class="code"><code>' + highlight(lines, b.lang || 'json') + '</code></pre></div>';
+    '<pre class="code" tabindex="0" aria-label="' + esc((label ? label + ' ' : '') + 'code') + '"><code>' + highlight(lines, b.lang || 'json') + '</code></pre></div>';
 }
 
 /* ---------- sequence diagrams ---------- */
@@ -65,7 +65,7 @@ function seqSVG(d) {
     }
     const x1 = xs[s.f], x2 = xs[s.t], dir = x2 > x1 ? 1 : -1, k = s.k || '';
     const ly = y + 18;
-    body += '<text class="sq-lb ' + k + '" x="' + ((x1 + x2) / 2) + '" y="' + (y + 10) + '" text-anchor="middle">' + esc(s.l) + '</text>';
+    body += '<text class="sq-lb ' + k + '" x="' + ((x1 + x2) / 2) + '" y="' + (y + 10) + '" text-anchor="middle">' + (k === 'del' ? '✕ ' : '') + esc(s.l) + '</text>';
     body += '<line class="sq-ln ' + k + (s.d ? ' dash' : '') + '" x1="' + (x1 + dir * 4) + '" y1="' + ly + '" x2="' + (x2 - dir * 10) + '" y2="' + ly + '"/>';
     body += '<path class="sq-hd ' + k + '" d="M' + (x2 - dir * 2) + ' ' + ly + ' L' + (x2 - dir * 12) + ' ' + (ly - 5) + ' L' + (x2 - dir * 12) + ' ' + (ly + 5) + ' Z"/>';
     y += 42;

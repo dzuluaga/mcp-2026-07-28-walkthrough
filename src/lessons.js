@@ -1,6 +1,17 @@
 
 const S = 'https://modelcontextprotocol.io/specification/2026-07-28';
 
+const TEST_SETUP = `export MCP=http://localhost:3000/mcp
+META='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}'
+mcp() {  # usage: mcp <method> '<json body>' [extra curl args...]
+  curl -sS -N "$MCP" \\
+    -H 'Content-Type: application/json' \\
+    -H 'Accept: application/json, text/event-stream' \\
+    -H 'MCP-Protocol-Version: 2026-07-28' \\
+    -H "Mcp-Method: $1" "\${@:3}" -d "$2" \\
+    -w '\\nHTTP %{http_code}\\n'
+}`;
+
 /* Every diff block uses a 2-character gutter on every line:
    "+ " added   "- " removed   "* " highlighted   "  " unchanged */
 const LESSONS = [
@@ -37,7 +48,6 @@ const LESSONS = [
         </div></div>
       <div class="card"><h3>Diagrams</h3><p>Each diagram has a <strong>Legacy / 2026-07-28</strong> switch. Try drawing the new flow from memory before you flip it.</p></div>
     </div>`,
-  exciting: `<p>MCP servers can now run like ordinary web services: a round-robin load balancer, autoscaling, serverless functions, edge workers. No sticky routing, no session store. That makes the protocol much cheaper to run at scale.</p>`,
   quiz: [
     { q: 'Under 2026-07-28, what is an open stdio connection to a server?',
       o: ['A session: the server can rely on what the client said earlier on it', 'Just a pipe: unrelated requests may share it, and none of them may rely on earlier ones', 'Invalid: stdio was removed in this revision', 'A subscription stream'],
@@ -142,19 +152,8 @@ const LESSONS = [
       <li>A legacy client that sends <code>initialize</code> to a modern-only server fails. Over HTTP, its request lacks the required headers and gets <code>400</code>. Legacy clients have no way to move forward on their own.</li>
       <li><strong>The fix:</strong> read version and capabilities from each request's <code>_meta</code>. To keep old clients working, go <strong>dual-era</strong>: answer <code>initialize</code> with legacy semantics, and serve requests carrying <code>_meta</code> statelessly. A modern-only server SHOULD name its supported versions in the error it returns to <code>initialize</code>; it's the only diagnostic an old client can show.</li>
     </ul>`,
-  test: { intro: `<p>Point these at your server. The helper adds the transport headers so each test shows only the part that matters. It works in bash and zsh.</p>`,
-    blocks: [{ label: 'One-time setup', text:
-`export MCP=http://localhost:3000/mcp
-META='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}'
-mcp() {  # usage: mcp <method> '<json body>' [extra curl args...]
-  curl -sS -N "$MCP" \\
-    -H 'Content-Type: application/json' \\
-    -H 'Accept: application/json, text/event-stream' \\
-    -H 'MCP-Protocol-Version: 2026-07-28' \\
-    -H "Mcp-Method: $1" "\${@:3}" -d "$2" \\
-    -w '\\nHTTP %{http_code}\\n'
-}` },
-    { label: 'Tests', text:
+  test: { intro: `<p>Point these at your server. The setup helper above adds the transport headers, so each test shows only the part that matters. Those headers are explained in lesson 03.</p>`,
+    blocks: [{ label: 'Tests', text:
 `# 1. A modern request with no initialize first
 mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}'
 # expect: HTTP 200 and "resultType":"complete"
@@ -166,7 +165,6 @@ mcp tools/list '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":
 # 3. Ask for a version nobody speaks (header and body must agree)
 curl -sS "$MCP" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -H 'MCP-Protocol-Version: 1900-01-01' -H 'Mcp-Method: tools/list' -d '{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"1900-01-01","io.modelcontextprotocol/clientCapabilities":{}}}}' -w '\\nHTTP %{http_code}\\n'
 # expect: HTTP 400, code -32022, data.supported lists real versions` }] },
-  exciting: `<p>No warm-up round trip, so a serverless function can answer the very first request it receives. Capabilities are scoped to each request, so one client can expose different features to different calls. And any instance can answer anything, which is what makes horizontal scaling trivial.</p>`,
   quiz: [
     { q: 'Which _meta fields MUST be on every request?', o: ['protocolVersion and clientInfo', 'protocolVersion and clientCapabilities', 'All three: protocolVersion, clientCapabilities, clientInfo', 'None: _meta is optional'], a: 1,
       x: '<b>protocolVersion and clientCapabilities are required.</b> clientInfo is a SHOULD, and it is self-reported, so it is for display and logs, never for security decisions. A missing required field gets -32602 (HTTP 400).' },
@@ -237,357 +235,14 @@ mcp server/discover '{"jsonrpc":"2.0","id":"d1","method":"server/discover","para
 # expect: supportedVersions, capabilities, serverInfo in _meta, ttlMs and cacheScope
 
 # stdio: pipe one line into your server's start command
-printf '%s\\n' '{"jsonrpc":"2.0","id":"d1","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' | node ./server.js
+{ printf '%s\\n' '{"jsonrpc":"2.0","id":"d1","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'; sleep 2; } | node ./server.js
+# the sleep keeps stdin open long enough for an async reply
 # a legacy server answers with "method not found" or nothing at all; that is the fallback signal` }] },
-  exciting: `<p>Registries, gateways and IDEs can list a server's abilities with one cheap request that shared proxies may cache, and without committing to a session. It's the MCP version of a <code>/.well-known</code> document.</p>`,
   quiz: [
     { q: 'Must a client call server/discover before calling tools/call?', o: ['Yes, it replaced initialize as the mandatory first call', 'No. Servers must implement it, but clients may call any method directly', 'Only over HTTP', 'Only when the server advertises extensions'], a: 1,
       x: '<b>Mandatory to implement, optional to call.</b> A client can go straight to tools/call and handle -32022. Dual-era clients on stdio SHOULD call it first, as a probe to tell modern servers from legacy ones.' }
   ],
   links: [['server/discover', S + '/server/discover'], ['stdio backward compatibility', S + '/basic/transports/stdio#backward-compatibility']]
-},
-{
-  id: 'sessions', short: 'Sessions become handles', tag: 'breaking', tagLabel: 'Breaks immediately', domain: 'Interactions · Security',
-  title: 'Sessions are gone. State becomes a handle you pass around',
-  lede: 'The Mcp-Session-Id header and protocol-level sessions are removed. If a tool needs to remember something between calls, it hands the client an explicit ID.',
-  what: `
-    <ul>
-      <li>There's no <code>Mcp-Session-Id</code>. A modern-only server <strong>ignores</strong> the header and never mints session IDs. It answers HTTP <code>GET</code> or <code>DELETE</code> on the endpoint with <code>405</code>.</li>
-      <li>State that spans requests <strong>MUST</strong> be referenced by an explicit identifier that the client passes on each request: a <strong>server-minted handle</strong>, sent as an ordinary tool argument.</li>
-      <li><code>tools/list</code>, <code>resources/list</code> and <code>prompts/list</code> no longer vary by connection. They may still vary by the caller's authorization.</li>
-    </ul>`,
-  why: `<p>A session ties a client to whichever process holds its state. Handles move the state somewhere every instance can reach, such as a database, and put the reference in plain sight. The model can see <code>cartId</code> in a tool result and reason about it.</p>`,
-  seq: {
-    before: { actors: ['Client', 'Server A', 'Server B'], steps: [
-      { f: 0, t: 1, l: 'tools/call  Mcp-Session-Id: 1868…', k: 'del' },
-      { f: 1, t: 0, l: 'ok (cart kept in A\'s memory)', d: 1 },
-      { n: 'Load balancer sends the next call to B', a: 0, b: 2, k: 'del' },
-      { f: 0, t: 2, l: 'tools/call  Mcp-Session-Id: 1868…', k: 'del' },
-      { f: 2, t: 0, l: 'error: unknown session', k: 'err', d: 1 } ] },
-    after: { actors: ['Client', 'Server A', 'Server B'], steps: [
-      { f: 0, t: 1, l: 'tools/call create_cart', k: 'add' },
-      { f: 1, t: 0, l: 'result {cartId: "cart_9fK2…"}', k: 'add', d: 1 },
-      { n: 'Cart stored in a shared database, keyed by cartId + user', a: 1, b: 2, k: 'acc' },
-      { f: 0, t: 2, l: 'tools/call add_to_cart {cartId, sku}', k: 'add' },
-      { f: 2, t: 0, l: 'result (B looked the cart up)', d: 1 } ] }
-  },
-  payloads: [
-    { t: 'Keeping a shopping cart between calls', before: { lang: 'http', d: 1, text:
-`  POST /mcp HTTP/1.1
-- Mcp-Session-Id: 1868a90c-5f4e-4c1a-9d2b-7f3e1c0a9b44
-  Content-Type: application/json
-
-  {"jsonrpc": "2.0", "id": 7, "method": "tools/call",
-   "params": { "name": "add_to_cart",
-               "arguments": { "sku": "MUG-01" } }}
-  // the server looks up sessions["1868a90c…"].cart, which lives in ONE process's memory` },
-      after: { lang: 'json', d: 1, text:
-`  // ① the first call mints a handle and returns it
-  {"jsonrpc": "2.0", "id": 1, "result": {
-    "resultType": "complete",
-    "content": [{ "type": "text", "text": "Cart created" }],
-+   "structuredContent": { "cartId": "cart_9fK2xQ7Lw0" }
-  }}
-
-  // ② every later call passes it back as an ordinary argument
-  {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-   "params": {
-     "name": "add_to_cart",
-+    "arguments": { "cartId": "cart_9fK2xQ7Lw0", "sku": "MUG-01" },
-     "_meta": { … per-request fields … }
-   }}` }, cap: 'The handle name and shape are yours to choose. The spec only requires that cross-call state be referenced explicitly on each request.' }
-  ],
-  impact: `
-    <ul>
-      <li>Anything kept in a session map is unreachable: the working directory, open DB connections, half-built objects, cached auth decisions.</li>
-      <li>It can <strong>fail silently</strong>. If you keyed state by connection, two unrelated conversations sharing one stdio process will see each other's data.</li>
-      <li><strong>Secure the handle:</strong> generate it with real randomness, give it an expiry, and on <em>every</em> call check that the authenticated caller owns it. Skip that, and you've built the attack the spec names <strong>state handle hijacking</strong>.</li>
-    </ul>`,
-  test: { blocks: [{ label: 'Tests', text:
-`# 1. The old endpoints are gone
-curl -sS -X GET "$MCP" -o /dev/null -w 'GET -> %{http_code}\\n'        # expect 405
-curl -sS -X DELETE "$MCP" -o /dev/null -w 'DELETE -> %{http_code}\\n'  # expect 405
-
-# 2. A stray session header is ignored, and no session ID comes back
-mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}' -H 'Mcp-Session-Id: abc' -D - | grep -i mcp-session-id
-# expect: no output
-
-# 3. The real test: run TWO instances with no sticky routing,
-#    call create_cart on one and add_to_cart on the other. It must still work.
-
-# 4. Hijack test: use user A's cartId with user B's token. It must be rejected.` }] },
-  exciting: `<p>A round-robin load balancer, autoscaling and serverless all just work. Server crashes lose nothing that matters. And state is now visible: the model, the logs and a human reviewer can all see which cart or job a call refers to.</p>`,
-  quiz: [
-    { q: 'Your tool builds a report across several calls. Where should the partial report be referenced?', o: ['In the Mcp-Session-Id header', 'By connection identity on the stdio process', 'By a server-minted handle passed as an ordinary tool argument', 'In clientInfo'], a: 2,
-      x: 'State that spans requests <b>MUST</b> be referenced by an explicit identifier on each request. Treat the handle as a name, not a password: bind it to the authenticated user and check ownership on every call.' },
-    { q: 'What should a 2026-07-28-only server do with an HTTP GET to its MCP endpoint?', o: ['Open an SSE stream for notifications', 'Return 405 Method Not Allowed', 'Return 404', 'Redirect to subscriptions/listen'], a: 1,
-      x: '<b>405.</b> GET and DELETE belonged to the old session and stream model. Notifications now come through a subscriptions/listen request.' }
-  ],
-  links: [['Streamable HTTP: earlier revisions', S + '/basic/transports/streamable-http#earlier-streamable-http-revisions'], ['Statelessness', S + '/basic/index#statelessness']]
-},
-{
-  id: 'mrtr', short: 'Multi Round-Trip Requests', tag: 'breaking', tagLabel: 'Breaks immediately', domain: 'Interactions & Execution · 26%',
-  title: 'The server can\'t interrupt any more. It asks, and you retry',
-  lede: 'This is the biggest change, and the most tested. Servers no longer send elicitation, sampling or roots requests mid-call. They return input_required, and the client re-sends the original request with the answers.',
-  what: `
-    <ol>
-      <li>The client sends <code>tools/call</code> (id 1).</li>
-      <li>The server needs something, so it answers with <code>resultType: "input_required"</code>. That result holds <code>inputRequests</code> (a map of <code>elicitation/create</code>, <code>sampling/createMessage</code> or <code>roots/list</code> requests), <code>requestState</code> (an opaque string), or both. The original request is now <strong>finished</strong>.</li>
-      <li>The client gathers the answers and sends the <strong>same request again with a new id</strong>, adding <code>inputResponses</code> and the <em>exact</em> <code>requestState</code>.</li>
-      <li>The server rebuilds its context from the retry alone and completes.</li>
-    </ol>
-    <p>Only <code>tools/call</code>, <code>resources/read</code> and <code>prompts/get</code> may return <code>input_required</code>. The server MUST NOT ask for something the client didn't declare in its capabilities.</p>`,
-  why: `<p>A server-initiated request needs a live channel back to the client and memory of the paused call, which means sticky routing again. With Multi Round-Trip Requests (MRTR), each leg is an independent request: whichever instance receives the retry has everything it needs.</p>`,
-  seq: {
-    before: { actors: ['User', 'Client', 'Server'], steps: [
-      { f: 1, t: 2, l: 'tools/call (id 1)' },
-      { f: 2, t: 1, l: 'elicitation/create (id srv-1)', k: 'del' },
-      { f: 1, t: 0, l: 'ask user' }, { f: 0, t: 1, l: 'octocat', d: 1 },
-      { f: 1, t: 2, l: 'response to srv-1', k: 'del', d: 1 },
-      { f: 2, t: 1, l: 'result (id 1)', d: 1 } ] },
-    after: { actors: ['User', 'Client', 'Server'], steps: [
-      { f: 1, t: 2, l: 'tools/call (id 1)' },
-      { f: 2, t: 1, l: 'input_required {inputRequests, requestState}', k: 'add', d: 1 },
-      { n: 'Request 1 is finished. Nothing is held open.', a: 1, b: 2, k: 'acc' },
-      { f: 1, t: 0, l: 'ask user' }, { f: 0, t: 1, l: 'octocat', d: 1 },
-      { f: 1, t: 2, l: 'tools/call (id 2) + inputResponses + state', k: 'add' },
-      { f: 2, t: 1, l: 'result (resultType: complete)', d: 1 } ] }
-  },
-  payloads: [
-    { t: 'Asking the user for their GitHub username', before: { lang: 'json', d: 1, text:
-`  // during a tools/call, the SERVER sent its own request on the response stream
-- {"jsonrpc": "2.0", "id": "srv-1", "method": "elicitation/create",
--  "params": { "message": "Please provide your GitHub username",
--              "requestedSchema": { "type": "object",
--                "properties": { "name": { "type": "string" } } } }}
-  // …and the client had to answer it with a JSON-RPC response
-- {"jsonrpc": "2.0", "id": "srv-1",
--  "result": { "action": "accept", "content": { "name": "octocat" } }}` },
-      after: { lang: 'json', d: 1, text:
-`  // ① the server's answer to tools/call id 1
-  {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "result": {
-+     "resultType": "input_required",
-+     "inputRequests": {
-+       "github_login": {
-+         "method": "elicitation/create",
-+         "params": {
-+           "mode": "form",
-+           "message": "Please provide your GitHub username",
-+           "requestedSchema": {
-+             "type": "object",
-+             "properties": { "name": { "type": "string" } },
-+             "required": ["name"]
-+           }
-+         }
-+       }
-+     },
-+     "requestState": "AEAD-protected blob"
-    }
-  }` }, cap: 'The inputRequests example is verbatim from the spec. The key (github_login) is chosen by the server and must be unique within the request.' },
-    { t: 'The retry', after: { lang: 'json', d: 1, text:
-`  {
-    "jsonrpc": "2.0",
-*   "id": 2,
-    "method": "tools/call",
-    "params": {
-      "name": "create_repo",
-      "arguments": { "repo": "demo" },
-+     "inputResponses": {
-+       "github_login": { "action": "accept", "content": { "name": "octocat" } }
-+     },
-+     "requestState": "AEAD-protected blob",
-      "_meta": { … per-request fields … }
-    }
-  }` }, cap: 'Same method and arguments. A new id (MUST differ). requestState echoed back byte for byte. The client MUST NOT parse it, change it, or reuse it on any other request.' }
-  ],
-  impact: `
-    <ul>
-      <li>Every place a tool asks the user, calls the model, or reads roots mid-execution stops working. The spec forbids sending requests on the response stream.</li>
-      <li>Your handler must be <strong>re-entrant</strong>: one logical operation means two (or more) calls, and the second must resume, not start again.</li>
-      <li><strong>requestState comes back attacker-controlled.</strong> If it affects authorization or business logic, protect its integrity (HMAC or AEAD) and reject anything that fails verification. Inside it, include the user (principal), a short expiry, and the method plus a digest of the parameters. If something must be one-time-use, enforce that on the server; the state alone can't.</li>
-      <li>If the client leaves out a needed answer, return another <code>input_required</code> rather than an error.</li>
-    </ul>`,
-  test: { blocks: [{ label: 'Tests (example tool: create_repo)', text:
-`META_E='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"elicitation":{}}}'
-
-# 1. First leg: expect resultType "input_required" with inputRequests and/or requestState
-mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_repo","arguments":{"repo":"demo"},'"$META_E"'}}' -H 'Mcp-Name: create_repo'
-
-# 2. Retry: NEW id, same arguments, answers, and the exact requestState from step 1
-mcp tools/call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_repo","arguments":{"repo":"demo"},"inputResponses":{"github_login":{"action":"accept","content":{"name":"octocat"}}},"requestState":"PASTE_FROM_STEP_1",'"$META_E"'}}' -H 'Mcp-Name: create_repo'
-# expect: resultType "complete"
-
-# 3. Negative tests: each one must be rejected
-#    a) change one character of requestState
-#    b) replay it with another user's token
-#    c) replay it after its expiry
-#    d) send it on a different tool or with different arguments
-
-# 4. Capability check: repeat step 1 with clientCapabilities {}
-#    the server must NOT send an elicitation/create in inputRequests` }] },
-  exciting: `<p>Human-in-the-loop over plain request and response. A user can take five minutes to answer, and no socket, worker or session is held open meanwhile. Any instance can resume the work. It's the same pattern as an HTTP 401 challenge-and-retry, applied to user input and model calls.</p>`,
-  quiz: [
-    { q: 'What must the client change when it retries after input_required?', o: ['Nothing: same id, same params', 'A new JSON-RPC id, plus inputResponses and the exact requestState', 'Send the answers as a notification instead', 'Open a subscriptions/listen stream to wait for the result'], a: 1,
-      x: 'The retry is an independent request, so the <b>id MUST differ</b>. The client adds inputResponses (keyed to the inputRequests) and echoes requestState unchanged. If the server sent no requestState, the client MUST NOT include one.' },
-    { q: 'Which requests may a server answer with input_required?', o: ['Any request', 'tools/call, resources/read and prompts/get', 'tools/call only', 'tools/list and tools/call'], a: 1,
-      x: 'Only those three. Servers <b>MUST NOT</b> send InputRequiredResult on any other request.' },
-    { q: 'Why must the server protect requestState with HMAC or AEAD?', o: ['To make it smaller', 'It travels through the client and comes back attacker-controlled', 'Because the spec requires JWT', 'So the client can read it safely'], a: 1,
-      x: 'The spec says to treat requestState as <b>attacker-controlled input</b>. Bind it to the principal, give it a short expiry, and tie it to the originating request, so it can\'t be tampered with, reused by another user, or replayed on another call.' }
-  ],
-  links: [['Multi Round-Trip Requests', S + '/basic/patterns/mrtr'], ['SEP-2322', 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2322']]
-},
-{
-  id: 'results', short: 'Typed, cacheable results', tag: 'quiet', tagLabel: 'Fails quietly', domain: 'Interactions & Execution · 26%',
-  title: 'Every result says what it is, and how long it stays fresh',
-  lede: 'Results must carry resultType. Lists, reads and discovery must also carry ttlMs and cacheScope, so clients and proxies know how long to cache them.',
-  what: `
-    <p><strong>resultType</strong> is required on every result: <code>"complete"</code>, <code>"input_required"</code>, or a value added by an extension the client advertised (Tasks adds <code>"task"</code>). If the field is absent, the client treats the result as <code>"complete"</code>; that's the rule for older servers. An unrecognised value is invalid.</p>
-    <p><strong>Caching hints</strong> are required on complete results from <code>server/discover</code>, <code>tools/list</code>, <code>prompts/list</code>, <code>resources/list</code>, <code>resources/templates/list</code> and <code>resources/read</code>:</p>
-    <ul>
-      <li><code>ttlMs</code>: milliseconds the result may be treated as fresh. It must be ≥ 0, and <code>0</code> means stale immediately. A missing value is treated as 0, a negative one is ignored.</li>
-      <li><code>cacheScope</code>: <code>"public"</code> means no user-specific data, so any shared gateway may cache it. <code>"private"</code> means it can be reused only within the same authorization context.</li>
-    </ul>
-    <p><code>input_required</code> results and results from MRTR retries are never cached. A change notification immediately invalidates a fresh cache entry. Servers SHOULD return <code>tools/list</code> in a <strong>deterministic order</strong>.</p>`,
-  why: `<p>Without a type tag, a client can't tell a final answer from "I need more input". Without cache hints, clients poll list endpoints blindly. Explicit TTLs, the same idea as HTTP <code>Cache-Control</code>, cut that traffic. A stable tool order also makes the model's prompt-cache hits more likely.</p>`,
-  seq: {
-    after: { actors: ['Client', 'Server'], steps: [
-      { f: 0, t: 1, l: 'tools/list' }, { f: 1, t: 0, l: '{tools, ttlMs: 300000, public}', k: 'add', d: 1 },
-      { n: 'Need tools again 2 min later: still fresh, use the cache', a: 0, b: 0, k: 'acc' },
-      { f: 1, t: 0, l: 'notifications/tools/list_changed', d: 1 },
-      { n: 'Invalidate at once, even though the TTL hasn\'t expired', a: 0, b: 0, k: 'acc' },
-      { f: 0, t: 1, l: 'tools/list' } ] }
-  },
-  payloads: [
-    { t: 'A tool list', before: { lang: 'json', d: 1, text:
-`  {"jsonrpc": "2.0", "id": 3, "result": {
-    "tools": [ { "name": "get_weather", "inputSchema": { … } } ]
-  }}` }, after: { lang: 'json', d: 1, text:
-`  {"jsonrpc": "2.0", "id": 3, "result": {
-+   "resultType": "complete",
-    "tools": [ { "name": "get_weather", "inputSchema": { … } } ],
-+   "ttlMs": 300000,
-+   "cacheScope": "public"
-  }}` } },
-    { t: 'A per-user resource must be private', after: { lang: 'json', d: 1, text:
-`  {"jsonrpc": "2.0", "id": 4, "result": {
-    "resultType": "complete",
-    "contents": [{ "uri": "app://me/settings", "mimeType": "application/json", "text": "{…}" }],
-+   "ttlMs": 60000,
-*   "cacheScope": "private"
-  }}` }, cap: 'cacheScope is a promise about the data, not an access control. Every page of a paginated list must use the same scope.' }
-  ],
-  impact: `
-    <ul>
-      <li>A result with no <code>resultType</code> from a modern server is non-compliant. Clients assume <code>complete</code>, which hides the mistake until you add MRTR.</li>
-      <li>List and read results without <code>ttlMs</code>/<code>cacheScope</code> are non-compliant. Worse, marking user-specific data <code>"public"</code> lets a shared gateway serve one user's data to another.</li>
-      <li>Treat the TTL as a freshness check when the data is needed, not as a polling timer. If you do poll, add jitter and backoff.</li>
-    </ul>`,
-  test: { blocks: [{ label: 'Tests', text:
-`# Every result has resultType; lists carry the cache hints
-mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}' | grep -o '"resultType":"[a-z_]*"\\|"ttlMs":[0-9]*\\|"cacheScope":"[a-z]*"'
-
-# Determinism: two calls should list tools in the same order
-diff <(mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}') <(mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}')
-
-# Review: any resources/read that depends on the caller must say "private"` }] },
-  exciting: `<p>Gateways can cache public tool lists across all users, so a thousand agents don't each poll your server. A deterministic tool order keeps the model's prompt prefix stable, which makes prompt caching cheaper and faster on the LLM side too.</p>`,
-  quiz: [
-    { q: 'resources/read returns the caller\'s own account settings. Which cacheScope?', o: ['"public"', '"private"', 'Omit it', '"session"'], a: 1,
-      x: '<b>"private"</b>: it contains user-specific data and must not be shared across authorization contexts (a different token needs a different cache).' },
-    { q: 'A client gets a result with no resultType field. How should it treat it?', o: ['As invalid', 'As "complete" (a server from before 2026-07-28)', 'As "input_required"', 'Retry with a new id'], a: 1,
-      x: 'For backward compatibility, a missing resultType <b>MUST</b> be treated as "complete". An <em>unrecognised</em> value, by contrast, is invalid.' }
-  ],
-  links: [['Caching', S + '/server/utilities/caching'], ['ResultType', S + '/basic/index#resulttype']]
-},
-{
-  id: 'listen', short: 'subscriptions/listen', tag: 'breaking', tagLabel: 'Breaks immediately', domain: 'Interactions & Execution · 26%',
-  title: 'Change notifications: one stream you ask for',
-  lede: 'The standalone GET stream and resources/subscribe are gone. A client opens subscriptions/listen, an ordinary request whose response stays open, and opts in by notification type.',
-  what: `
-    <ul>
-      <li>The filter has four optional fields: <code>toolsListChanged</code>, <code>promptsListChanged</code>, <code>resourcesListChanged</code> (booleans) and <code>resourceSubscriptions</code> (an array of URIs). The server <strong>MUST NOT</strong> send types the client didn't ask for.</li>
-      <li>The first message is always <code>notifications/subscriptions/acknowledged</code>, listing the subset the server agreed to honour.</li>
-      <li>Every notification carries <code>io.modelcontextprotocol/subscriptionId</code>, which equals the JSON-RPC id of the listen request. A client can run several subscriptions at once.</li>
-      <li>Request-scoped messages like <code>notifications/progress</code> and <code>notifications/message</code> <strong>never</strong> travel on the listen stream. They stay on the response stream of the request they belong to.</li>
-      <li>The subscription ends when the client closes the stream (HTTP) or sends <code>notifications/cancelled</code> (stdio). When the server ends it, it SHOULD send a final <code>complete</code> result first.</li>
-    </ul>`,
-  why: `<p>A standing GET stream belonged to a session. Making "listen" a normal request means it gets the same auth, routing, headers and version rules as everything else, and its state lives in the request, not the connection. Opting in by type also stops notifications nobody wanted.</p>`,
-  seq: {
-    before: { actors: ['Client', 'Server'], steps: [
-      { f: 0, t: 1, l: 'GET /mcp (standalone SSE)', k: 'del' },
-      { f: 0, t: 1, l: 'resources/subscribe {uri}', k: 'del' },
-      { f: 1, t: 0, l: 'notifications/resources/updated', d: 1 },
-      { f: 1, t: 0, l: 'any server-initiated message', k: 'del', d: 1 } ] },
-    after: { actors: ['Client', 'Server'], steps: [
-      { f: 0, t: 1, l: 'POST subscriptions/listen (id 1, filter)', k: 'add' },
-      { f: 1, t: 0, l: 'subscriptions/acknowledged  subId 1', k: 'add', d: 1 },
-      { n: 'The stream stays open', a: 0, b: 1, k: 'acc' },
-      { f: 1, t: 0, l: 'tools/list_changed  subId 1', d: 1 },
-      { f: 1, t: 0, l: 'resources/updated  subId 1', d: 1 } ] }
-  },
-  payloads: [
-    { t: 'Subscribing', before: { lang: 'http', d: 1, text:
-`- GET /mcp HTTP/1.1
-- Accept: text/event-stream
-- Mcp-Session-Id: 1868a90c-5f4e-4c1a-9d2b-7f3e1c0a9b44
-
-- {"jsonrpc": "2.0", "id": 5, "method": "resources/subscribe",
--  "params": { "uri": "file:///project/config.json" }}` },
-      after: { lang: 'json', d: 1, text:
-`  {
-    "jsonrpc": "2.0",
-    "id": 1,
-+   "method": "subscriptions/listen",
-    "params": {
-      "_meta": { … per-request fields … },
-+     "notifications": {
-+       "toolsListChanged": true,
-+       "resourceSubscriptions": ["file:///project/config.json"]
-+     }
-    }
-  }` } },
-    { t: 'What comes back on that one stream', after: { lang: 'json', d: 1, text:
-`  // always first
-  {"jsonrpc": "2.0", "method": "notifications/subscriptions/acknowledged",
-   "params": {
-+    "_meta": { "io.modelcontextprotocol/subscriptionId": 1 },
-     "notifications": { "toolsListChanged": true,
-                        "resourceSubscriptions": ["file:///project/config.json"] }
-   }}
-
-  // later, whenever the file changes
-  {"jsonrpc": "2.0", "method": "notifications/resources/updated",
-   "params": {
-+    "_meta": { "io.modelcontextprotocol/subscriptionId": 1 },
-     "uri": "file:///project/config.json"
-   }}` }, cap: 'Verbatim from the spec. subscriptionId 1 is the id of the listen request, which is how a client tells several subscriptions apart.' }
-  ],
-  impact: `
-    <ul>
-      <li>Change notifications you push outside a listen stream go nowhere. Clients that open a GET stream get <code>405</code>.</li>
-      <li>You must implement the acknowledgement, the filter, the <code>subscriptionId</code> tagging, and stopping when the stream closes.</li>
-      <li>On stdio, if the process restarts, the client must send <code>subscriptions/listen</code> again; the server keeps no subscription state across reconnections.</li>
-      <li>For long-lived streams, send an SSE comment line (<code>:</code>) now and then as a keep-alive, so proxies don't time the stream out.</li>
-    </ul>`,
-  test: { blocks: [{ label: 'Tests', text:
-`# Open a listen stream (leave it running), then change a tool on the server
-mcp subscriptions/listen '{"jsonrpc":"2.0","id":1,"method":"subscriptions/listen","params":{'"$META"',"notifications":{"toolsListChanged":true}}}'
-# expect: first event is notifications/subscriptions/acknowledged with subscriptionId 1
-#         then notifications/tools/list_changed carrying subscriptionId 1
-#         and NOT any resource or prompt notifications (you didn't ask for them)
-
-# In another terminal, call a slow tool: its progress must arrive on ITS stream, not here` }] },
-  exciting: `<p>Notifications are now filtered, correlated and tied to auth like any other request. It's one mechanism for everything, and the Tasks extension reuses it for task status pushes. Gateways can route a listen request like any other request.</p>`,
-  quiz: [
-    { q: 'Where do notifications/progress messages for a long tools/call arrive?', o: ['On the subscriptions/listen stream', 'On the response stream of that tools/call', 'On the GET stream', 'They were removed'], a: 1,
-      x: 'Request-scoped notifications (progress and log messages) flow <b>only on the response stream of the request they relate to</b>, never on the listen stream.' },
-    { q: 'What is the subscriptionId on each notification?', o: ['A random UUID the server picks', 'The JSON-RPC id of the subscriptions/listen request', 'The Mcp-Session-Id', 'The resource URI'], a: 1,
-      x: 'It is the <b>id of the listen request</b>. On stdio, where everything shares one channel, clients MUST use it to match notifications to subscriptions.' }
-  ],
-  links: [['Subscriptions', S + '/basic/patterns/subscriptions'], ['Streamable HTTP: message flow', S + '/basic/transports/streamable-http#message-flow']]
 },
 {
   id: 'headers', short: 'HTTP headers', tag: 'quiet', tagLabel: 'Fails quietly', domain: 'Architecture · Security',
@@ -673,12 +328,350 @@ mcp tools/call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"
 
 # Unknown method: expect 404 and -32601
 mcp nope/nope '{"jsonrpc":"2.0","id":3,"method":"nope/nope","params":{'"$META"'}}'` }] },
-  exciting: `<p>MCP traffic becomes legible to ordinary infrastructure. You can route by tool name, pin a region from a header, and run web-application-firewall rules or per-tool rate limits at the edge, all without a JSON parser in the hot path.</p>`,
   quiz: [
     { q: 'The Mcp-Name header says get_weather but the body\'s params.name is delete_all. What happens?', o: ['The server runs delete_all; the body wins', 'The gateway routes get_weather and the server runs get_weather', '400 Bad Request with -32020 HeaderMismatch', '404 with -32601'], a: 2,
       x: 'Servers that process the body <b>MUST reject</b> any header-body mismatch with 400 and -32020. That prevents a split where infrastructure routes one thing and the server runs another.' }
   ],
   links: [['Streamable HTTP: request metadata', S + '/basic/transports/streamable-http#request-metadata'], ['Server validation', S + '/basic/transports/streamable-http#server-validation']]
+},
+{
+  id: 'sessions', short: 'Sessions become handles', tag: 'breaking', tagLabel: 'Breaks immediately', domain: 'Interactions · Security',
+  title: 'Sessions are gone. State becomes a handle you pass around',
+  lede: 'The Mcp-Session-Id header and protocol-level sessions are removed. If a tool needs to remember something between calls, it hands the client an explicit ID.',
+  what: `
+    <ul>
+      <li>There's no <code>Mcp-Session-Id</code>. A modern-only server <strong>SHOULD</strong> ignore the header and never mint session IDs, and SHOULD answer HTTP <code>GET</code> or <code>DELETE</code> on the endpoint with <code>405</code>.</li>
+      <li>State that spans requests <strong>MUST</strong> be referenced by an explicit identifier that the client passes on each request: a <strong>server-minted handle</strong>, sent as an ordinary tool argument.</li>
+      <li><code>tools/list</code>, <code>resources/list</code> and <code>prompts/list</code> no longer vary by connection. They may still vary by the caller's authorization.</li>
+    </ul>`,
+  why: `<p>A session ties a client to whichever process holds its state. Handles move the state somewhere every instance can reach, such as a database, and put the reference in plain sight. The model can see <code>cartId</code> in a tool result and reason about it.</p>`,
+  seq: {
+    before: { actors: ['Client', 'Server A', 'Server B'], steps: [
+      { f: 0, t: 1, l: 'tools/call  Mcp-Session-Id: 1868…', k: 'del' },
+      { f: 1, t: 0, l: 'ok (cart kept in A\'s memory)', d: 1 },
+      { n: 'Load balancer sends the next call to B', a: 0, b: 2, k: 'del' },
+      { f: 0, t: 2, l: 'tools/call  Mcp-Session-Id: 1868…', k: 'del' },
+      { f: 2, t: 0, l: 'error: unknown session', k: 'err', d: 1 } ] },
+    after: { actors: ['Client', 'Server A', 'Server B'], steps: [
+      { f: 0, t: 1, l: 'tools/call create_cart', k: 'add' },
+      { f: 1, t: 0, l: 'result {cartId: "cart_9fK2…"}', k: 'add', d: 1 },
+      { n: 'Cart stored in a shared database, keyed by cartId + user', a: 1, b: 2, k: 'acc' },
+      { f: 0, t: 2, l: 'tools/call add_to_cart {cartId, sku}', k: 'add' },
+      { f: 2, t: 0, l: 'result (B looked the cart up)', d: 1 } ] }
+  },
+  payloads: [
+    { t: 'Keeping a shopping cart between calls', before: { lang: 'http', d: 1, text:
+`  POST /mcp HTTP/1.1
+- Mcp-Session-Id: 1868a90c-5f4e-4c1a-9d2b-7f3e1c0a9b44
+  Content-Type: application/json
+
+  {"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+   "params": { "name": "add_to_cart",
+               "arguments": { "sku": "MUG-01" } }}
+  // the server looks up sessions["1868a90c…"].cart, which lives in ONE process's memory` },
+      after: { lang: 'json', d: 1, text:
+`  // ① the first call mints a handle and returns it
+  {"jsonrpc": "2.0", "id": 1, "result": {
+    "resultType": "complete",
+    "content": [{ "type": "text", "text": "Cart created" }],
++   "structuredContent": { "cartId": "cart_9fK2xQ7Lw0" }
+  }}
+
+  // ② every later call passes it back as an ordinary argument
+  {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+   "params": {
+     "name": "add_to_cart",
++    "arguments": { "cartId": "cart_9fK2xQ7Lw0", "sku": "MUG-01" },
+     "_meta": { … per-request fields … }
+   }}` }, cap: 'The handle name and shape are yours to choose. The spec only requires that cross-call state be referenced explicitly on each request.' }
+  ],
+  impact: `
+    <ul>
+      <li>Anything kept in a session map is unreachable: the working directory, open DB connections, half-built objects, cached auth decisions.</li>
+      <li>It can <strong>fail silently</strong>. If you keyed state by connection, two unrelated conversations sharing one stdio process will see each other's data.</li>
+      <li><strong>Secure the handle:</strong> generate it with real randomness, give it an expiry, and on <em>every</em> call check that the authenticated caller owns it. Skip that, and you've built the attack the spec names <strong>state handle hijacking</strong>.</li>
+    </ul>`,
+  test: { blocks: [{ label: 'Tests', text:
+`# 1. The old endpoints are gone
+curl -sS -X GET "$MCP" -o /dev/null -w 'GET -> %{http_code}\\n'        # expect 405
+curl -sS -X DELETE "$MCP" -o /dev/null -w 'DELETE -> %{http_code}\\n'  # expect 405
+
+# 2. A stray session header is ignored, and no session ID comes back
+mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}' -H 'Mcp-Session-Id: abc' -D - | grep -i mcp-session-id
+# expect: no output
+
+# 3. The real test: run TWO instances with no sticky routing,
+#    call create_cart on one and add_to_cart on the other. It must still work.
+
+# 4. Hijack test: use user A's cartId with user B's token. It must be rejected.` }] },
+  quiz: [
+    { q: 'Your tool builds a report across several calls. Where should the partial report be referenced?', o: ['In the Mcp-Session-Id header', 'By connection identity on the stdio process', 'By a server-minted handle passed as an ordinary tool argument', 'In clientInfo'], a: 2,
+      x: 'State that spans requests <b>MUST</b> be referenced by an explicit identifier on each request. Treat the handle as a name, not a password: bind it to the authenticated user and check ownership on every call.' },
+    { q: 'What should a 2026-07-28-only server do with an HTTP GET to its MCP endpoint?', o: ['Open an SSE stream for notifications', 'Return 405 Method Not Allowed', 'Return 404', 'Redirect to subscriptions/listen'], a: 1,
+      x: '<b>405.</b> GET and DELETE belonged to the old session and stream model. Notifications now come through a subscriptions/listen request.' }
+  ],
+  links: [['Streamable HTTP: earlier revisions', S + '/basic/transports/streamable-http#earlier-streamable-http-revisions'], ['Statelessness', S + '/basic/index#statelessness']]
+},
+{
+  id: 'mrtr', short: 'Multi Round-Trip Requests', tag: 'breaking', tagLabel: 'Breaks immediately', domain: 'Interactions & Execution · 26%',
+  title: 'The server can\'t interrupt any more. It asks, and you retry',
+  lede: 'This is the biggest change, and the most tested. Servers no longer send elicitation, sampling or roots requests mid-call. They return input_required, and the client re-sends the original request with the answers.',
+  what: `
+    <ol>
+      <li>The client sends <code>tools/call</code> (id 1).</li>
+      <li>The server needs something, so it answers with <code>resultType: "input_required"</code>. That result holds <code>inputRequests</code> (a map of <code>elicitation/create</code>, <code>sampling/createMessage</code> or <code>roots/list</code> requests), <code>requestState</code> (an opaque string), or both. The original request is now <strong>finished</strong>.</li>
+      <li>The client gathers the answers and sends the <strong>same request again with a new id</strong>, adding <code>inputResponses</code> and the <em>exact</em> <code>requestState</code>.</li>
+      <li>The server rebuilds its context from the retry alone and completes.</li>
+    </ol>
+    <p>Only <code>tools/call</code>, <code>resources/read</code> and <code>prompts/get</code> may return <code>input_required</code>. The server MUST NOT ask for something the client didn't declare in its capabilities.</p>`,
+  why: `<p>A server-initiated request needs a live channel back to the client and memory of the paused call, which means sticky routing again. With Multi Round-Trip Requests (MRTR), each leg is an independent request: whichever instance receives the retry has everything it needs.</p>`,
+  seq: {
+    before: { actors: ['User', 'Client', 'Server'], steps: [
+      { f: 1, t: 2, l: 'tools/call (id 1)' },
+      { f: 2, t: 1, l: 'elicitation/create (id srv-1)', k: 'del' },
+      { f: 1, t: 0, l: 'ask user' }, { f: 0, t: 1, l: 'octocat', d: 1 },
+      { f: 1, t: 2, l: 'response to srv-1', k: 'del', d: 1 },
+      { f: 2, t: 1, l: 'result (id 1)', d: 1 } ] },
+    after: { actors: ['User', 'Client', 'Server'], steps: [
+      { f: 1, t: 2, l: 'tools/call (id 1)' },
+      { f: 2, t: 1, l: 'input_required {inputRequests, requestState}', k: 'add', d: 1 },
+      { n: 'Request 1 is finished. Nothing is held open.', a: 1, b: 2, k: 'acc' },
+      { f: 1, t: 0, l: 'ask user' }, { f: 0, t: 1, l: 'octocat', d: 1 },
+      { f: 1, t: 2, l: 'tools/call (id 2) + inputResponses + state', k: 'add' },
+      { f: 2, t: 1, l: 'result (resultType: complete)', d: 1 } ] }
+  },
+  payloads: [
+    { t: 'Asking the user for their GitHub username', before: { lang: 'json', d: 1, text:
+`  // during a tools/call, the SERVER sent its own request on the response stream
+- {"jsonrpc": "2.0", "id": "srv-1", "method": "elicitation/create",
+-  "params": { "message": "Please provide your GitHub username",
+-              "requestedSchema": { "type": "object",
+-                "properties": { "name": { "type": "string" } } } }}
+  // …and the client had to answer it with a JSON-RPC response
+- {"jsonrpc": "2.0", "id": "srv-1",
+-  "result": { "action": "accept", "content": { "name": "octocat" } }}` },
+      after: { lang: 'json', d: 1, text:
+`  // ① the server's answer to tools/call id 1
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
++     "resultType": "input_required",
++     "inputRequests": {
++       "github_login": {
++         "method": "elicitation/create",
++         "params": {
++           "mode": "form",
++           "message": "Please provide your GitHub username",
++           "requestedSchema": {
++             "type": "object",
++             "properties": { "name": { "type": "string" } },
++             "required": ["name"]
++           }
++         }
++       }
++     },
++     "requestState": "AEAD-protected blob"
+    }
+  }` }, cap: 'An excerpt of the spec\'s example (its second, sampling entry is omitted). The key (github_login) is chosen by the server and must be unique within the request.' },
+    { t: 'The retry', after: { lang: 'json', d: 1, text:
+`  {
+    "jsonrpc": "2.0",
+*   "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "create_repo",
+      "arguments": { "repo": "demo" },
++     "inputResponses": {
++       "github_login": { "action": "accept", "content": { "name": "octocat" } }
++     },
++     "requestState": "AEAD-protected blob",
+      "_meta": { … per-request fields … }
+    }
+  }` }, cap: 'Same method and arguments. A new id (MUST differ). requestState echoed back byte for byte. The client MUST NOT parse it, change it, or reuse it on any other request.' }
+  ],
+  impact: `
+    <ul>
+      <li>Every place a tool asks the user, calls the model, or reads roots mid-execution stops working. The spec forbids sending requests on the response stream.</li>
+      <li>Your handler must be <strong>re-entrant</strong>: one logical operation means two (or more) calls, and the second must resume, not start again.</li>
+      <li><strong>requestState comes back attacker-controlled.</strong> If it affects authorization or business logic, protect its integrity (HMAC or AEAD) and reject anything that fails verification. Inside it, include the user (principal), a short expiry, and the method plus a digest of the parameters. If something must be one-time-use, enforce that on the server; the state alone can't.</li>
+      <li>If the client leaves out a needed answer, return another <code>input_required</code> rather than an error.</li>
+    </ul>`,
+  test: { blocks: [{ label: 'Tests (example tool: create_repo)', text:
+`META_E='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"elicitation":{}}}'
+
+# 1. First leg: expect resultType "input_required" with inputRequests and/or requestState
+mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_repo","arguments":{"repo":"demo"},'"$META_E"'}}' -H 'Mcp-Name: create_repo'
+
+# 2. Retry: NEW id, same arguments, answers, and the exact requestState from step 1
+mcp tools/call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_repo","arguments":{"repo":"demo"},"inputResponses":{"github_login":{"action":"accept","content":{"name":"octocat"}}},"requestState":"PASTE_FROM_STEP_1",'"$META_E"'}}' -H 'Mcp-Name: create_repo'
+# expect: resultType "complete"
+
+# 3. Negative tests: each one must be rejected
+#    a) change one character of requestState
+#    b) replay it with another user's token
+#    c) replay it after its expiry
+#    d) send it on a different tool or with different arguments
+
+# 4. Capability check: repeat step 1 with clientCapabilities {}
+#    the server must NOT send an elicitation/create in inputRequests` }] },
+  quiz: [
+    { q: 'What must the client change when it retries after input_required?', o: ['Nothing: same id, same params', 'A new JSON-RPC id, plus inputResponses and the exact requestState', 'Send the answers as a notification instead', 'Open a subscriptions/listen stream to wait for the result'], a: 1,
+      x: 'The retry is an independent request, so the <b>id MUST differ</b>. The client adds inputResponses (keyed to the inputRequests) and echoes requestState unchanged. If the server sent no requestState, the client MUST NOT include one.' },
+    { q: 'Which requests may a server answer with input_required?', o: ['Any request', 'tools/call, resources/read and prompts/get', 'tools/call only', 'tools/list and tools/call'], a: 1,
+      x: 'Only those three. Servers <b>MUST NOT</b> send InputRequiredResult on any other request.' },
+    { q: 'Your requestState records which environment ("staging" or "production") a deploy targets. Why must the server protect its integrity with HMAC or AEAD?', o: ['So proxies can cache it', 'It travels through the client and comes back attacker-controlled', 'Because the spec requires every requestState to be a JWT', 'So the client can show the user its contents'], a: 1,
+      x: 'The spec says to treat requestState as <b>attacker-controlled input</b>. Integrity protection is a MUST whenever it influences authorization, resource access or business logic; it may be skipped only if tampering can cause nothing worse than a failed request. Servers SHOULD also bind it to the principal, give it a short expiry, and tie it to the originating request.' }
+  ],
+  links: [['Multi Round-Trip Requests', S + '/basic/patterns/mrtr'], ['SEP-2322', 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2322']]
+},
+{
+  id: 'results', short: 'Typed, cacheable results', tag: 'quiet', tagLabel: 'Fails quietly', domain: 'Interactions & Execution · 26%',
+  title: 'Every result says what it is, and how long it stays fresh',
+  lede: 'Results must carry resultType. Lists, reads and discovery must also carry ttlMs and cacheScope, so clients and proxies know how long to cache them.',
+  what: `
+    <p><strong>resultType</strong> is required on every result: <code>"complete"</code>, <code>"input_required"</code>, or a value added by an extension the client advertised (Tasks adds <code>"task"</code>). If the field is absent, the client treats the result as <code>"complete"</code>; that's the rule for older servers. An unrecognised value is invalid.</p>
+    <p><strong>Caching hints</strong> are required on complete results from <code>server/discover</code>, <code>tools/list</code>, <code>prompts/list</code>, <code>resources/list</code>, <code>resources/templates/list</code> and <code>resources/read</code>:</p>
+    <ul>
+      <li><code>ttlMs</code>: milliseconds the result may be treated as fresh. It must be ≥ 0, and <code>0</code> means stale immediately. A missing value is treated as 0, and a negative one is ignored and treated as 0.</li>
+      <li><code>cacheScope</code>: <code>"public"</code> means no user-specific data, so any shared gateway may cache it. <code>"private"</code> means it can be reused only within the same authorization context.</li>
+    </ul>
+    <p><code>input_required</code> results and results from MRTR retries are never cached. A change notification immediately invalidates a fresh cache entry. Servers SHOULD return <code>tools/list</code> in a <strong>deterministic order</strong>.</p>`,
+  why: `<p>Without a type tag, a client can't tell a final answer from "I need more input". Without cache hints, clients poll list endpoints blindly. Explicit TTLs, the same idea as HTTP <code>Cache-Control</code>, cut that traffic. A stable tool order also makes the model's prompt-cache hits more likely.</p>`,
+  seq: {
+    after: { actors: ['Client', 'Server'], steps: [
+      { f: 0, t: 1, l: 'tools/list' }, { f: 1, t: 0, l: '{tools, ttlMs: 300000, public}', k: 'add', d: 1 },
+      { n: 'Need tools again 2 min later: still fresh, use the cache', a: 0, b: 0, k: 'acc' },
+      { f: 1, t: 0, l: 'notifications/tools/list_changed', d: 1 },
+      { n: 'Invalidate at once, even though the TTL hasn\'t expired', a: 0, b: 0, k: 'acc' },
+      { f: 0, t: 1, l: 'tools/list' } ] }
+  },
+  payloads: [
+    { t: 'A tool list', before: { lang: 'json', d: 1, text:
+`  {"jsonrpc": "2.0", "id": 3, "result": {
+    "tools": [ { "name": "get_weather", "inputSchema": { … } } ]
+  }}` }, after: { lang: 'json', d: 1, text:
+`  {"jsonrpc": "2.0", "id": 3, "result": {
++   "resultType": "complete",
+    "tools": [ { "name": "get_weather", "inputSchema": { … } } ],
++   "ttlMs": 300000,
++   "cacheScope": "public"
+  }}` } },
+    { t: 'A per-user resource must be private', after: { lang: 'json', d: 1, text:
+`  {"jsonrpc": "2.0", "id": 4, "result": {
+    "resultType": "complete",
+    "contents": [{ "uri": "app://me/settings", "mimeType": "application/json", "text": "{…}" }],
++   "ttlMs": 60000,
+*   "cacheScope": "private"
+  }}` }, cap: 'cacheScope is a promise about the data, not an access control. Every page of a paginated list must use the same scope.' }
+  ],
+  impact: `
+    <ul>
+      <li>A result with no <code>resultType</code> from a modern server is non-compliant. Clients assume <code>complete</code>, which hides the mistake until you add MRTR.</li>
+      <li>List and read results without <code>ttlMs</code>/<code>cacheScope</code> are non-compliant. Worse, marking user-specific data <code>"public"</code> lets a shared gateway serve one user's data to another.</li>
+      <li>Treat the TTL as a freshness check when the data is needed, not as a polling timer. If you do poll, add jitter and backoff.</li>
+    </ul>`,
+  test: { blocks: [{ label: 'Tests', text:
+`# Every result has resultType; lists carry the cache hints
+mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}' | grep -o '"resultType":"[a-z_]*"\\|"ttlMs":[0-9]*\\|"cacheScope":"[a-z]*"'
+
+# Determinism: two calls should list tools in the same order
+diff <(mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}') <(mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}')
+
+# Review: any resources/read that depends on the caller must say "private"` }] },
+  quiz: [
+    { q: 'resources/read returns the caller\'s own account settings. Which cacheScope?', o: ['"public"', '"private"', 'Omit it; ttlMs alone controls sharing', '"public", as long as the request is authenticated'], a: 1,
+      x: '<b>"private"</b>: it contains user-specific data and must not be shared across authorization contexts (a different token needs a different cache).' },
+    { q: 'A client gets a result with no resultType field. How should it treat it?', o: ['As invalid', 'As "complete" (a server from before 2026-07-28)', 'As "input_required"', 'Retry with a new id'], a: 1,
+      x: 'For backward compatibility, a missing resultType <b>MUST</b> be treated as "complete". An <em>unrecognised</em> value, by contrast, is invalid.' }
+  ],
+  links: [['Caching', S + '/server/utilities/caching'], ['ResultType', S + '/basic/index#resulttype']]
+},
+{
+  id: 'listen', short: 'subscriptions/listen', tag: 'breaking', tagLabel: 'Breaks immediately', domain: 'Interactions & Execution · 26%',
+  title: 'Change notifications: one stream you ask for',
+  lede: 'The standalone GET stream and resources/subscribe are gone. A client opens subscriptions/listen, an ordinary request whose response stays open, and opts in by notification type.',
+  what: `
+    <ul>
+      <li>The filter has four optional fields: <code>toolsListChanged</code>, <code>promptsListChanged</code>, <code>resourcesListChanged</code> (booleans) and <code>resourceSubscriptions</code> (an array of URIs). The server <strong>MUST NOT</strong> send types the client didn't ask for.</li>
+      <li>The first message is always <code>notifications/subscriptions/acknowledged</code>, listing the subset the server agreed to honour.</li>
+      <li>Every notification carries <code>io.modelcontextprotocol/subscriptionId</code>, which equals the JSON-RPC id of the listen request. A client can run several subscriptions at once.</li>
+      <li>Request-scoped messages like <code>notifications/progress</code> and <code>notifications/message</code> <strong>never</strong> travel on the listen stream. They stay on the response stream of the request they belong to.</li>
+      <li>The subscription ends when the client closes the stream (HTTP) or sends <code>notifications/cancelled</code> (stdio). When the server ends it, it SHOULD send a final <code>complete</code> result first.</li>
+    </ul>`,
+  why: `<p>A standing GET stream belonged to a session. Making "listen" a normal request means it gets the same auth, routing, headers and version rules as everything else, and its state lives in the request, not the connection. Opting in by type also stops notifications nobody wanted.</p>`,
+  seq: {
+    before: { actors: ['Client', 'Server'], steps: [
+      { f: 0, t: 1, l: 'GET /mcp (standalone SSE)', k: 'del' },
+      { f: 0, t: 1, l: 'resources/subscribe {uri}', k: 'del' },
+      { f: 1, t: 0, l: 'notifications/resources/updated', d: 1 },
+      { f: 1, t: 0, l: 'any server-initiated message', k: 'del', d: 1 } ] },
+    after: { actors: ['Client', 'Server'], steps: [
+      { f: 0, t: 1, l: 'POST subscriptions/listen (id 1, filter)', k: 'add' },
+      { f: 1, t: 0, l: 'subscriptions/acknowledged  subId 1', k: 'add', d: 1 },
+      { n: 'The stream stays open', a: 0, b: 1, k: 'acc' },
+      { f: 1, t: 0, l: 'tools/list_changed  subId 1', d: 1 },
+      { f: 1, t: 0, l: 'resources/updated  subId 1', d: 1 } ] }
+  },
+  payloads: [
+    { t: 'Subscribing', before: { lang: 'json', d: 1, text:
+`  // ① a standalone SSE stream, opened with an HTTP GET
+- GET /mcp   Accept: text/event-stream   Mcp-Session-Id: 1868a90c-…
+
+  // ② a separate POST to subscribe to one resource
+- {"jsonrpc": "2.0", "id": 5, "method": "resources/subscribe",
+-  "params": { "uri": "file:///project/config.json" }}` },
+      after: { lang: 'json', d: 1, text:
+`  {
+    "jsonrpc": "2.0",
+    "id": 1,
++   "method": "subscriptions/listen",
+    "params": {
+      "_meta": { … per-request fields … },
++     "notifications": {
++       "toolsListChanged": true,
++       "resourceSubscriptions": ["file:///project/config.json"]
++     }
+    }
+  }` } },
+    { t: 'What comes back on that one stream', after: { lang: 'json', d: 1, text:
+`  // always first
+  {"jsonrpc": "2.0", "method": "notifications/subscriptions/acknowledged",
+   "params": {
++    "_meta": { "io.modelcontextprotocol/subscriptionId": 1 },
+     "notifications": { "toolsListChanged": true,
+                        "resourceSubscriptions": ["file:///project/config.json"] }
+   }}
+
+  // later, whenever the file changes
+  {"jsonrpc": "2.0", "method": "notifications/resources/updated",
+   "params": {
++    "_meta": { "io.modelcontextprotocol/subscriptionId": 1 },
+     "uri": "file:///project/config.json"
+   }}` }, cap: 'Verbatim from the spec. subscriptionId 1 is the id of the listen request, which is how a client tells several subscriptions apart.' }
+  ],
+  impact: `
+    <ul>
+      <li>Change notifications you push outside a listen stream go nowhere. Clients that open a GET stream SHOULD get <code>405</code>.</li>
+      <li>You must implement the acknowledgement, the filter, the <code>subscriptionId</code> tagging, and stopping when the stream closes.</li>
+      <li>On stdio, if the process restarts, the client must send <code>subscriptions/listen</code> again; the server keeps no subscription state across reconnections.</li>
+      <li>For long-lived streams, send an SSE comment line (<code>:</code>) now and then as a keep-alive, so proxies don't time the stream out.</li>
+    </ul>`,
+  test: { blocks: [{ label: 'Tests', text:
+`# Open a listen stream (leave it running), then change a tool on the server
+mcp subscriptions/listen '{"jsonrpc":"2.0","id":1,"method":"subscriptions/listen","params":{'"$META"',"notifications":{"toolsListChanged":true}}}'
+# expect: first event is notifications/subscriptions/acknowledged with subscriptionId 1
+#         then notifications/tools/list_changed carrying subscriptionId 1
+#         and NOT any resource or prompt notifications (you didn't ask for them)
+
+# In another terminal, call a slow tool: its progress must arrive on ITS stream, not here` }] },
+  quiz: [
+    { q: 'Where do notifications/progress messages for a long tools/call arrive?', o: ['On the subscriptions/listen stream', 'On the response stream of that tools/call', 'On the GET stream', 'They were removed'], a: 1,
+      x: 'Request-scoped notifications (progress and log messages) flow <b>only on the response stream of the request they relate to</b>, never on the listen stream.' },
+    { q: 'What is the subscriptionId on each notification?', o: ['A random UUID the server picks', 'The JSON-RPC id of the subscriptions/listen request', 'The Mcp-Session-Id', 'The resource URI'], a: 1,
+      x: 'It is the <b>id of the listen request</b>. On stdio, where everything shares one channel, clients MUST use it to match notifications to subscriptions.' }
+  ],
+  links: [['Subscriptions', S + '/basic/patterns/subscriptions'], ['Streamable HTTP: message flow', S + '/basic/transports/streamable-http#message-flow']]
 },
 {
   id: 'streams', short: 'No resume, close = cancel', tag: 'quiet', tagLabel: 'Fails quietly', domain: 'Interactions & Execution · 26%',
@@ -738,7 +731,6 @@ mcp tools/call '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"
 
 # A Last-Event-ID header must be ignored (no replay)
 mcp tools/list '{"jsonrpc":"2.0","id":9,"method":"tools/list","params":{'"$META"'}}' -H 'Last-Event-ID: 42'` }] },
-  exciting: `<p>Servers get simpler: no event log, no replay buffer, no stream bookkeeping. Cancellation is free and reliable, and users who close a tab really do stop the expensive work.</p>`,
   quiz: [
     { q: 'Over Streamable HTTP in 2026-07-28, how does a client cancel an in-flight request?', o: ['Send notifications/cancelled in a new POST', 'Close that request\'s response stream', 'Send DELETE with the session id', 'Send tasks/cancel'], a: 1,
       x: '<b>Closing the SSE response stream is the cancellation signal</b> on HTTP. notifications/cancelled is for stdio. tasks/cancel applies only to Tasks.' }
@@ -814,7 +806,6 @@ mcp ping '{"jsonrpc":"2.0","id":2,"method":"ping","params":{'"$META"'}}'
 
 # Missing resource: expect -32602, not -32002
 mcp resources/read '{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"file:///nope",'"$META"'}}' -H 'Mcp-Name: file:///nope'` }] },
-  exciting: `<p>Debug logging becomes surgical: turn it on for the one failing call, not for every user sharing the server. With no global mutable state, server behaviour is fully determined by the request in front of it.</p>`,
   quiz: [
     { q: 'A request arrives with no io.modelcontextprotocol/logLevel. May the server send notifications/message for it?', o: ['Yes, at "info"', 'Yes, at whatever level was last set', 'No: it MUST NOT', 'Only on the listen stream'], a: 2,
       x: 'Logging is <b>opt-in per request</b>. No logLevel means no log notifications for that request. (Logging as a whole is also deprecated: prefer stderr on stdio, or OpenTelemetry.)' }
@@ -832,7 +823,7 @@ mcp resources/read '{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{
       <li><strong>Poll</strong> with <code>tasks/get</code>. Blocking <code>tasks/result</code> is <strong>removed</strong>, and so is <code>tasks/list</code>.</li>
       <li><strong>Mid-flight input</strong>: the status changes to <code>input_required</code> with <code>inputRequests</code>, and the client answers with the <strong>new</strong> <code>tasks/update</code>.</li>
       <li><strong>Cancel</strong> with <code>tasks/cancel</code>. It's cooperative, so the task may still finish.</li>
-      <li>The statuses are <code>working</code>, <code>input_required</code>, <code>completed</code>, <code>failed</code> and <code>cancelled</code>; the last three are terminal. Status pushes are available via <code>subscriptions/listen</code>.</li>
+      <li>The statuses are <code>working</code>, <code>input_required</code>, <code>completed</code>, <code>failed</code> and <code>cancelled</code>; the last three are terminal. Status pushes are available via <code>subscriptions/listen</code> as <code>notifications/tasks</code>, each carrying the full task state.</li>
     </ul>`,
   why: `<p>Holding a connection open while a job runs breaks on timeouts, crashes and flaky networks. A durable task ID survives all three. Moving Tasks to an extension keeps the core small, and lets the feature change on its own schedule.</p>`,
   seq: {
@@ -857,13 +848,22 @@ mcp resources/read '{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{
   // ② the server chooses to answer with a handle
   {"jsonrpc": "2.0", "id": 11, "result": {
 +   "resultType": "task",
-+   "task": { "taskId": "t-123", "status": "working", "ttlMs": 3600000, "pollIntervalMs": 5000 }
++   "taskId": "t-123",
++   "status": "working",
++   "createdAt": "2026-09-01T10:30:00Z",
++   "lastUpdatedAt": "2026-09-01T10:30:00Z",
++   "ttlMs": 3600000,
++   "pollIntervalMs": 5000
   }}
 
   // ③ poll, ④ answer a mid-flight question, ⑤ optionally cancel
-+ {"jsonrpc": "2.0", "id": 12, "method": "tasks/get", "params": { "taskId": "t-123" }}
-+ {"jsonrpc": "2.0", "id": 13, "method": "tasks/update", "params": { "taskId": "t-123", "inputResponses": { … } }}
-+ {"jsonrpc": "2.0", "id": 14, "method": "tasks/cancel", "params": { "taskId": "t-123" }}` }, cap: 'The method names, statuses and fields come from the extension overview, but this field layout is illustrative. The exact shapes are defined in the modelcontextprotocol/ext-tasks repository.' }
++ {"jsonrpc": "2.0", "id": 12, "method": "tasks/get",
++  "params": { "taskId": "t-123", "_meta": { … per-request fields … } }}
++ {"jsonrpc": "2.0", "id": 13, "method": "tasks/update",
++  "params": { "taskId": "t-123", "inputResponses": { … }, "_meta": { … } }}
++ {"jsonrpc": "2.0", "id": 14, "method": "tasks/cancel",
++  "params": { "taskId": "t-123", "_meta": { … } }}
+  // update and cancel are acknowledged with an empty result: { "resultType": "complete" }` }, cap: 'Shapes from the ext-tasks schema (schema/2026-07-28/schema.ts). The task fields sit directly on the result, not under a "task" key (that nested key was the 2025-11-25 shape), and createdAt and lastUpdatedAt are required. ttlMs may be null, and pollIntervalMs is optional.' }
   ],
   impact: `
     <ul>
@@ -883,7 +883,6 @@ mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"
 # 3. Without opt-in ($META): the same call must NOT return a task
 
 # 4. Poll until terminal, kill your client, restart it, keep polling the same taskId` }] },
-  exciting: `<p>Continuous-integration runs, batch imports and approval gates become first-class MCP operations. A phone can start a job, lose signal, and pick it up an hour later with the same task ID. Pairing this with MRTR-style input makes human-in-the-loop workflows durable.</p>`,
   quiz: [
     { q: 'Which statement about Tasks in 2026-07-28 is true?', o: ['tasks/result still blocks until completion', 'tasks/list lets a client find all its tasks', 'It is an opt-in extension; clients poll with tasks/get and send input with tasks/update', 'Clients must flag each request that may become a task'], a: 2,
       x: 'Tasks is an <b>extension</b> (io.modelcontextprotocol/tasks). tasks/result and tasks/list are removed, tasks/update is new, and the server may return a task without a per-request flag, but only to clients that declared the extension.' }
@@ -945,7 +944,6 @@ mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"
 grep -rnE 'roots/list|sampling/createMessage|logging/setLevel|includeContext|notifications/message' src/
 grep -rnE '/register|registration_endpoint' src/    # Dynamic Client Registration
 grep -rnE 'text/event-stream.*GET|/sse\\b' src/      # old HTTP+SSE endpoints` }] },
-  exciting: `<p>MCP now evolves like a mature standard: changes announced in advance, a public registry, and a guaranteed runway. That's what lets enterprises commit to it.</p>`,
   quiz: [
     { q: 'What is the minimum time between a feature becoming Deprecated and being Removed?', o: ['One revision', 'Six months', 'Twelve months', 'There is no minimum'], a: 2,
       x: 'The lifecycle policy guarantees <b>at least twelve months</b> in the Deprecated state before removal.' },
@@ -960,9 +958,9 @@ grep -rnE 'text/event-stream.*GET|/sse\\b' src/      # old HTTP+SSE endpoints` }
   lede: 'Clients move from registering dynamically to identifying themselves by a URL. Several MUSTs close known OAuth attacks.',
   what: `
     <ul>
-      <li><strong>Client ID Metadata Documents (CIMD)</strong> replace Dynamic Client Registration (DCR) as the preferred method. The client's <code>client_id</code> is an HTTPS URL; the authorization server fetches it to learn the client's name and redirect URIs. DCR remains for authorization servers that don't support CIMD.</li>
-      <li><strong>Issuer in the response (RFC 9207).</strong> Authorization servers SHOULD add <code>iss</code> to the authorization response. If it's present, the client <strong>MUST</strong> check it against the issuer it recorded, <em>before</em> exchanging the code for a token.</li>
-      <li><strong>Credentials are bound to their issuer.</strong> Clients MUST store them keyed by issuer, MUST NOT reuse them with another authorization server, and MUST register again if the authorization server changes.</li>
+      <li><strong>Client ID Metadata Documents (CIMD)</strong> replace Dynamic Client Registration (DCR) as the preferred method when the client isn't pre-registered. The order is: pre-registration, then CIMD (if the authorization server advertises <code>client_id_metadata_document_supported</code>), then DCR, then asking the user. The client's <code>client_id</code> is an HTTPS URL; the authorization server fetches it to learn the client's name and redirect URIs. DCR remains for authorization servers that don't support CIMD.</li>
+      <li><strong>Issuer in the response (RFC 9207).</strong> Authorization servers SHOULD add <code>iss</code> to the authorization response. If it's present, the client <strong>MUST</strong> check it against the issuer it recorded (simple string comparison), <em>before</em> exchanging the code for a token. If the authorization server advertises <code>authorization_response_iss_parameter_supported</code> and <code>iss</code> is missing, the client <strong>MUST reject</strong> the response.</li>
+      <li><strong>Pre-registered and DCR credentials are bound to their issuer.</strong> Clients MUST store them keyed by issuer, MUST NOT reuse them with another authorization server, and MUST register again if the authorization server changes. A CIMD <code>client_id</code> is portable across authorization servers; it needs no re-registration.</li>
       <li><strong><code>application_type</code></strong> must be set correctly in DCR, to avoid OpenID Connect redirect-URI conflicts.</li>
     </ul>
     <p>Unchanged, and still heavily tested: tokens must be audience-bound to <em>your</em> server; never pass a client's token through to another service; <code>401</code> means a missing or bad token, <code>403</code> a valid token with too little scope; stdio servers take credentials from the environment.</p>`,
@@ -1006,11 +1004,12 @@ grep -rnE 'text/event-stream.*GET|/sse\\b' src/      # old HTTP+SSE endpoints` }
     </ul>`,
   test: { blocks: [{ label: 'Checks', text:
 `# Run these against your client with a test authorization server
-# 1. Return a redirect with iss = a DIFFERENT issuer: the client must refuse to redeem the code
-# 2. Point the client at a new authorization server: it must register again, not reuse credentials
+# 1a. Return a redirect with iss = a DIFFERENT issuer: the client must refuse to redeem the code
+# 1b. Advertise authorization_response_iss_parameter_supported, then omit iss: the client must reject
+# 2. (DCR or pre-registered clients only) Point the client at a new authorization server:
+#    it must register again, not reuse credentials. A CIMD client_id is portable.
 # 3. Call your MCP server with a valid token minted for ANOTHER audience: expect 401
 # 4. A valid token with too little scope: expect 403 with a WWW-Authenticate scope hint` }] },
-  exciting: `<p>Any client can work with any authorization server without a registration step: identity is just a URL you control. With issuer binding, multi-server setups are secure by default instead of by careful configuration.</p>`,
   quiz: [
     { q: 'Which check stops a mix-up attack?', o: ['Validating the Origin header', 'Comparing the iss parameter with the recorded issuer before redeeming the code', 'Setting cacheScope to private', 'Using PKCE alone'], a: 1,
       x: '<b>RFC 9207 issuer identification.</b> The client confirms the response came from the authorization server it started with, and keeps credentials bound to that issuer.' }
