@@ -1,16 +1,24 @@
 
 const S = 'https://modelcontextprotocol.io/specification/2026-07-28';
 
-const TEST_SETUP = `export MCP=http://localhost:3000/mcp
+const TEST_SETUP = `# 1. In a SECOND terminal, start the reference server (Node 18+, no dependencies)
+curl -sO https://mcp-2026-07-28-walkthrough.vercel.app/reference-server.mjs
+node reference-server.mjs                 # http://localhost:3000/mcp, logs appear here
+
+# 2. In THIS terminal, define the helper every test uses (bash or zsh)
+export MCP=http://localhost:3000/mcp
 META='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}'
 mcp() {  # usage: mcp <method> '<json body>' [extra curl args...]
   curl -sS -N "$MCP" \\
     -H 'Content-Type: application/json' \\
     -H 'Accept: application/json, text/event-stream' \\
     -H 'MCP-Protocol-Version: 2026-07-28' \\
+    -H "Authorization: Bearer \${MCP_USER:-alice}" \\
     -H "Mcp-Method: $1" "\${@:3}" -d "$2" \\
     -w '\\nHTTP %{http_code}\\n'
-}`;
+}
+# Demo auth: the reference server treats the bearer token as the user's name.
+# Prefix a command with MCP_USER=bob to act as someone else.`;
 
 /* Every diff block uses a 2-character gutter on every line:
    "+ " added   "- " removed   "* " highlighted   "  " unchanged */
@@ -152,7 +160,7 @@ const LESSONS = [
       <li>A legacy client that sends <code>initialize</code> to a modern-only server fails. Over HTTP, its request lacks the required headers and gets <code>400</code>. Legacy clients have no way to move forward on their own.</li>
       <li><strong>The fix:</strong> read version and capabilities from each request's <code>_meta</code>. To keep old clients working, go <strong>dual-era</strong>: answer <code>initialize</code> with legacy semantics, and serve requests carrying <code>_meta</code> statelessly. A modern-only server SHOULD name its supported versions in the error it returns to <code>initialize</code>; it's the only diagnostic an old client can show.</li>
     </ul>`,
-  test: { intro: `<p>Point these at your server. The setup helper above adds the transport headers, so each test shows only the part that matters. Those headers are explained in lesson 03.</p>`,
+  test: { intro: `<p>Run these against the reference server from the setup block, or point <code>MCP</code> at your own server. The helper adds the transport headers, which are explained in lesson 03.</p>`,
     blocks: [{ label: 'Tests', text:
 `# 1. A modern request with no initialize first
 mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}'
@@ -229,15 +237,15 @@ curl -sS "$MCP" -H 'Content-Type: application/json' -H 'Accept: application/json
       <li>Move everything your <code>initialize</code> handler returned into it, and add <code>supportedVersions</code>, <code>ttlMs</code> and <code>cacheScope</code>.</li>
       <li>If you support extensions (Tasks, Apps and so on), this is where you advertise them.</li>
     </ul>`,
-  test: { blocks: [{ label: 'HTTP and stdio', text:
+  test: { blocks: [{ label: 'Tests', text:
 `# HTTP
 mcp server/discover '{"jsonrpc":"2.0","id":"d1","method":"server/discover","params":{'"$META"'}}'
-# expect: supportedVersions, capabilities, serverInfo in _meta, ttlMs and cacheScope
+# expect: supportedVersions, capabilities (with extensions), serverInfo in _meta, ttlMs and cacheScope
 
-# stdio: pipe one line into your server's start command
-{ printf '%s\\n' '{"jsonrpc":"2.0","id":"d1","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'; sleep 2; } | node ./server.js
-# the sleep keeps stdin open long enough for an async reply
-# a legacy server answers with "method not found" or nothing at all; that is the fallback signal` }] },
+# stdio: the same server, speaking newline-delimited JSON on stdin/stdout
+{ printf '%s\\n' '{"jsonrpc":"2.0","id":"d1","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'; sleep 1; } | node reference-server.mjs --stdio
+# the sleep keeps stdin open long enough for the reply
+# a legacy server would answer "method not found" (or nothing): that is the fallback signal` }] },
   quiz: [
     { q: 'Must a client call server/discover before calling tools/call?', o: ['Yes, it replaced initialize as the mandatory first call', 'No. Servers must implement it, but clients may call any method directly', 'Only over HTTP', 'Only when the server advertises extensions'], a: 1,
       x: '<b>Mandatory to implement, optional to call.</b> A client can go straight to tools/call and handle -32022. Dual-era clients on stdio SHOULD call it first, as a probe to tell modern servers from legacy ones.' }
@@ -320,14 +328,18 @@ mcp server/discover '{"jsonrpc":"2.0","id":"d1","method":"server/discover","para
       <li>Still required as before: validate <code>Origin</code> (an invalid one gets <code>403</code>, which stops DNS rebinding), and bind to localhost when running locally.</li>
     </ul>`,
   test: { blocks: [{ label: 'Tests', text:
-`# Header says one tool, body says another: expect HTTP 400 and -32020
+`# 1. Header says one tool, body says another: expect HTTP 400 and -32020
 mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"delete_all","arguments":{},'"$META"'}}' -H 'Mcp-Name: get_weather'
 
-# Missing Mcp-Name on tools/call: expect 400 and -32020
+# 2. Missing Mcp-Name on tools/call: expect 400 and -32020
 mcp tools/call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_weather","arguments":{"location":"Seattle"},'"$META"'}}'
 
-# Unknown method: expect 404 and -32601
-mcp nope/nope '{"jsonrpc":"2.0","id":3,"method":"nope/nope","params":{'"$META"'}}'` }] },
+# 3. x-mcp-header: execute_sql mirrors region into Mcp-Param-Region
+mcp tools/call '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"execute_sql","arguments":{"region":"eu-west1","query":"SELECT 1"},'"$META"'}}' -H 'Mcp-Name: execute_sql' -H 'Mcp-Param-Region: eu-west1'
+# expect: 200. Now change the header to us-west1 (or drop it): expect 400 and -32020
+
+# 4. Unknown method: expect 404 and -32601
+mcp nope/nope '{"jsonrpc":"2.0","id":4,"method":"nope/nope","params":{'"$META"'}}' ` }] },
   quiz: [
     { q: 'The Mcp-Name header says get_weather but the body\'s params.name is delete_all. What happens?', o: ['The server runs delete_all; the body wins', 'The gateway routes get_weather and the server runs get_weather', '400 Bad Request with -32020 HeaderMismatch', '404 with -32601'], a: 2,
       x: 'Servers that process the body <b>MUST reject</b> any header-body mismatch with 400 and -32020. That prevents a split where infrastructure routes one thing and the server runs another.' }
@@ -400,10 +412,18 @@ curl -sS -X DELETE "$MCP" -o /dev/null -w 'DELETE -> %{http_code}\\n'  # expect 
 mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"'}}' -H 'Mcp-Session-Id: abc' -D - | grep -i mcp-session-id
 # expect: no output
 
-# 3. The real test: run TWO instances with no sticky routing,
-#    call create_cart on one and add_to_cart on the other. It must still work.
+# 3. Alice creates a cart and gets a handle back
+CART=$(mcp tools/call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_cart","arguments":{},'"$META"'}}' -H 'Mcp-Name: create_cart' | sed -n 's/.*"cartId":"\\([^"]*\\)".*/\\1/p'); echo "$CART"
 
-# 4. Hijack test: use user A's cartId with user B's token. It must be rejected.` }] },
+# 4. Alice uses it: expect "Added MUG-01"
+mcp tools/call '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"add_to_cart","arguments":{"cartId":"'"$CART"'","sku":"MUG-01"},'"$META"'}}' -H 'Mcp-Name: add_to_cart'
+
+# 5. Hijack attempt: Bob replays Alice's handle. Expect isError true, "Unknown cart"
+MCP_USER=bob mcp tools/call '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"add_to_cart","arguments":{"cartId":"'"$CART"'","sku":"TV-85IN"},'"$META"'}}' -H 'Mcp-Name: add_to_cart'
+
+# On your own server, the real test: run TWO instances with no sticky routing,
+# create the cart on one and add to it on the other. (The reference server keeps
+# carts in memory to stay dependency-free; a production server would use a shared store.)` }] },
   quiz: [
     { q: 'Your tool builds a report across several calls. Where should the partial report be referenced?', o: ['In the Mcp-Session-Id header', 'By connection identity on the stdio process', 'By a server-minted handle passed as an ordinary tool argument', 'In clientInfo'], a: 2,
       x: 'State that spans requests <b>MUST</b> be referenced by an explicit identifier on each request. Treat the handle as a name, not a password: bind it to the authenticated user and check ownership on every call.' },
@@ -497,24 +517,30 @@ mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'"$META"
       <li><strong>requestState comes back attacker-controlled.</strong> If it affects authorization or business logic, protect its integrity (HMAC or AEAD) and reject anything that fails verification. Inside it, include the user (principal), a short expiry, and the method plus a digest of the parameters. If something must be one-time-use, enforce that on the server; the state alone can't.</li>
       <li>If the client leaves out a needed answer, return another <code>input_required</code> rather than an error.</li>
     </ul>`,
-  test: { blocks: [{ label: 'Tests (example tool: create_repo)', text:
+  test: { blocks: [{ label: 'Tests', text:
 `META_E='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"elicitation":{}}}'
+CALL='"name":"create_repo","arguments":{"repo":"demo"}'
 
-# 1. First leg: expect resultType "input_required" with inputRequests and/or requestState
-mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_repo","arguments":{"repo":"demo"},'"$META_E"'}}' -H 'Mcp-Name: create_repo'
+# 1. First leg: expect resultType "input_required", inputRequests.github_login and a requestState
+mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{'"$CALL"','"$META_E"'}}' -H 'Mcp-Name: create_repo' | tee /tmp/leg1.txt
+STATE=$(sed -n 's/.*"requestState":"\\([^"]*\\)".*/\\1/p' /tmp/leg1.txt)
 
-# 2. Retry: NEW id, same arguments, answers, and the exact requestState from step 1
-mcp tools/call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_repo","arguments":{"repo":"demo"},"inputResponses":{"github_login":{"action":"accept","content":{"name":"octocat"}}},"requestState":"PASTE_FROM_STEP_1",'"$META_E"'}}' -H 'Mcp-Name: create_repo'
-# expect: resultType "complete"
+# 2. Retry: NEW id, same arguments, the answer, and the exact requestState
+ANSWER='"inputResponses":{"github_login":{"action":"accept","content":{"name":"octocat"}}}'
+mcp tools/call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{'"$CALL"','"$ANSWER"',"requestState":"'"$STATE"'",'"$META_E"'}}' -H 'Mcp-Name: create_repo'
+# expect: resultType "complete", "Created github.com/octocat/demo"
 
-# 3. Negative tests: each one must be rejected
-#    a) change one character of requestState
-#    b) replay it with another user's token
-#    c) replay it after its expiry
-#    d) send it on a different tool or with different arguments
+# 3. Negative tests: each one must be rejected with -32602
+#  a) tampered state
+mcp tools/call '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{'"$CALL"','"$ANSWER"',"requestState":"x'"$STATE"'",'"$META_E"'}}' -H 'Mcp-Name: create_repo'
+#  b) replayed by another user
+MCP_USER=bob mcp tools/call '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{'"$CALL"','"$ANSWER"',"requestState":"'"$STATE"'",'"$META_E"'}}' -H 'Mcp-Name: create_repo'
+#  c) replayed on different arguments
+mcp tools/call '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"create_repo","arguments":{"repo":"prod"},'"$ANSWER"',"requestState":"'"$STATE"'",'"$META_E"'}}' -H 'Mcp-Name: create_repo'
+#  (d: the state also expires after 10 minutes)
 
-# 4. Capability check: repeat step 1 with clientCapabilities {}
-#    the server must NOT send an elicitation/create in inputRequests` }] },
+# 4. Capability check: without elicitation declared, expect 400 and -32021
+mcp tools/call '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{'"$CALL"','"$META"'}}' -H 'Mcp-Name: create_repo' ` }] },
   quiz: [
     { q: 'What must the client change when it retries after input_required?', o: ['Nothing: same id, same params', 'A new JSON-RPC id, plus inputResponses and the exact requestState', 'Send the answers as a notification instead', 'Open a subscriptions/listen stream to wait for the result'], a: 1,
       x: 'The retry is an independent request, so the <b>id MUST differ</b>. The client adds inputResponses (keyed to the inputRequests) and echoes requestState unchanged. If the server sent no requestState, the client MUST NOT include one.' },
@@ -658,13 +684,17 @@ diff <(mcp tools/list '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{'
       <li>For long-lived streams, send an SSE comment line (<code>:</code>) now and then as a keep-alive, so proxies don't time the stream out.</li>
     </ul>`,
   test: { blocks: [{ label: 'Tests', text:
-`# Open a listen stream (leave it running), then change a tool on the server
+`# Terminal A: open a listen stream for tool-list changes (leave it running)
 mcp subscriptions/listen '{"jsonrpc":"2.0","id":1,"method":"subscriptions/listen","params":{'"$META"',"notifications":{"toolsListChanged":true}}}'
 # expect: first event is notifications/subscriptions/acknowledged with subscriptionId 1
-#         then notifications/tools/list_changed carrying subscriptionId 1
-#         and NOT any resource or prompt notifications (you didn't ask for them)
 
-# In another terminal, call a slow tool: its progress must arrive on ITS stream, not here` }] },
+# Terminal B (define the helper there too): change the tool list
+mcp tools/call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"toggle_beta_tool","arguments":{},'"$META"'}}' -H 'Mcp-Name: toggle_beta_tool'
+# expect in A: notifications/tools/list_changed carrying subscriptionId 1
+
+# Terminal B: change a resource you did NOT subscribe to
+mcp tools/call '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"touch_config","arguments":{},'"$META"'}}' -H 'Mcp-Name: touch_config'
+# expect in A: nothing at all (the filter is strict)` }] },
   quiz: [
     { q: 'Where do notifications/progress messages for a long tools/call arrive?', o: ['On the subscriptions/listen stream', 'On the response stream of that tools/call', 'On the GET stream', 'They were removed'], a: 1,
       x: 'Request-scoped notifications (progress and log messages) flow <b>only on the response stream of the request they relate to</b>, never on the listen stream.' },
@@ -725,12 +755,12 @@ mcp subscriptions/listen '{"jsonrpc":"2.0","id":1,"method":"subscriptions/listen
       <li>Any replay-buffer or event-ID code can be deleted.</li>
     </ul>`,
   test: { blocks: [{ label: 'Tests', text:
-`# Start a slow tool, then press Ctrl-C after a few progress events
+`# Start a slow tool (10 s), then press Ctrl-C after a few progress events
 mcp tools/call '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"build_report","arguments":{"month":"2026-09"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"progressToken":"p7"}}}' -H 'Mcp-Name: build_report'
-# expect in server logs: work for request 7 stops shortly after the disconnect
+# expect in the server terminal: "build_report cancelled at step N (stream closed)"
 
-# A Last-Event-ID header must be ignored (no replay)
-mcp tools/list '{"jsonrpc":"2.0","id":9,"method":"tools/list","params":{'"$META"'}}' -H 'Last-Event-ID: 42'` }] },
+# A Last-Event-ID header is ignored (no replay)
+mcp tools/list '{"jsonrpc":"2.0","id":9,"method":"tools/list","params":{'"$META"'}}' -H 'Last-Event-ID: 42' ` }] },
   quiz: [
     { q: 'Over Streamable HTTP in 2026-07-28, how does a client cancel an in-flight request?', o: ['Send notifications/cancelled in a new POST', 'Close that request\'s response stream', 'Send DELETE with the session id', 'Send tasks/cancel'], a: 1,
       x: '<b>Closing the SSE response stream is the cancellation signal</b> on HTTP. notifications/cancelled is for stdio. tasks/cancel applies only to Tasks.' }
@@ -797,15 +827,19 @@ mcp tools/list '{"jsonrpc":"2.0","id":9,"method":"tools/list","params":{'"$META"
       <li>Clients matching <code>-32002</code> stop recognising not-found errors from modern servers.</li>
     </ul>`,
   test: { blocks: [{ label: 'Tests', text:
-`# Without logLevel: zero notifications/message on the stream
+`# 1. Without logLevel: zero notifications/message (takes 10 s)
 mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"build_report","arguments":{"month":"2026-09"},'"$META"'}}' -H 'Mcp-Name: build_report' | grep -c notifications/message
 # expect: 0
 
-# ping is gone: expect 404 and -32601
-mcp ping '{"jsonrpc":"2.0","id":2,"method":"ping","params":{'"$META"'}}'
+# 2. With logLevel: debug lines arrive on THIS request's stream only
+mcp tools/call '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"build_report","arguments":{"month":"2026-09"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/logLevel":"debug"}}}' -H 'Mcp-Name: build_report'
 
-# Missing resource: expect -32602, not -32002
-mcp resources/read '{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"file:///nope",'"$META"'}}' -H 'Mcp-Name: file:///nope'` }] },
+# 3. ping is gone: expect 404 and -32601. Health checks use a plain endpoint instead:
+mcp ping '{"jsonrpc":"2.0","id":3,"method":"ping","params":{'"$META"'}}'
+curl -sS http://localhost:3000/healthz; echo
+
+# 4. Missing resource: expect -32602, not -32002
+mcp resources/read '{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"file:///nope",'"$META"'}}' -H 'Mcp-Name: file:///nope' ` }] },
   quiz: [
     { q: 'A request arrives with no io.modelcontextprotocol/logLevel. May the server send notifications/message for it?', o: ['Yes, at "info"', 'Yes, at whatever level was last set', 'No: it MUST NOT', 'Only on the listen stream'], a: 2,
       x: 'Logging is <b>opt-in per request</b>. No logLevel means no log notifications for that request. (Logging as a whole is also deprecated: prefer stderr on stdio, or OpenTelemetry.)' }
@@ -872,17 +906,22 @@ mcp resources/read '{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{
       <li>If you return tasks to clients that didn't opt in, those clients can't handle the result.</li>
     </ul>`,
   test: { blocks: [{ label: 'Tests', text:
-`META_T='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}}}'
+`META_T='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"elicitation":{},"extensions":{"io.modelcontextprotocol/tasks":{}}}}'
 
 # 1. The server advertises the extension
 mcp server/discover '{"jsonrpc":"2.0","id":"d","method":"server/discover","params":{'"$META"'}}' | grep -o 'io.modelcontextprotocol/tasks'
 
-# 2. With opt-in: a slow tool may return resultType "task"
-mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"build_report","arguments":{"month":"2026-09"},'"$META_T"'}}' -H 'Mcp-Name: build_report'
+# 2. With opt-in, the slow tool answers at once with resultType "task"
+TASK=$(mcp tools/call '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"build_report","arguments":{"month":"2026-09"},'"$META_T"'}}' -H 'Mcp-Name: build_report' | tee /dev/stderr | sed -n 's/.*"taskId":"\\([^"]*\\)".*/\\1/p')
 
-# 3. Without opt-in ($META): the same call must NOT return a task
+# 3. Poll (repeat every few seconds): working, then input_required after about 8 s
+mcp tasks/get '{"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"taskId":"'"$TASK"'",'"$META_T"'}}'
 
-# 4. Poll until terminal, kill your client, restart it, keep polling the same taskId` }] },
+# 4. Answer the mid-flight question, then keep polling until "completed"
+mcp tasks/update '{"jsonrpc":"2.0","id":3,"method":"tasks/update","params":{"taskId":"'"$TASK"'","inputResponses":{"charts":{"action":"accept","content":{"charts":true}}},'"$META_T"'}}'
+
+# 5. Without opt-in ($META) the same call does NOT become a task: it streams for 10 s instead
+# 6. Someone else's task: MCP_USER=bob mcp tasks/get ... must be rejected` }] },
   quiz: [
     { q: 'Which statement about Tasks in 2026-07-28 is true?', o: ['tasks/result still blocks until completion', 'tasks/list lets a client find all its tasks', 'It is an opt-in extension; clients poll with tasks/get and send input with tasks/update', 'Clients must flag each request that may become a task'], a: 2,
       x: 'Tasks is an <b>extension</b> (io.modelcontextprotocol/tasks). tasks/result and tasks/list are removed, tasks/update is new, and the server may return a task without a per-request flag, but only to clients that declared the extension.' }

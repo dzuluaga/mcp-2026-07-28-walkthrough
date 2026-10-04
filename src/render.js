@@ -4,7 +4,18 @@ const slug = s => String(s).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0
 const lessonUrl = l => '/' + l.id + '/';
 
 const extrasOf = l => (typeof EXTRAS !== 'undefined' && EXTRAS[l.id]) || {};
-const quizzesOf = l => (l.quiz || []).concat(extrasOf(l).moreQuiz || []);
+const quizzesOf = l => (l.quiz || []).concat(extrasOf(l).moreQuiz || [], (typeof PRACTICE_QUIZ !== 'undefined' && PRACTICE_QUIZ[l.id]) || []);
+const whyWrong = (l, qi) => (typeof WHY_WRONG !== 'undefined' && WHY_WRONG[l.id + '#' + qi]) || {};
+
+/* Primary MCPA domain for each lesson, with the exam's weights */
+const DOMAINS = [
+  { key: 'int', name: 'Interactions & Execution', weight: 26 },
+  { key: 'sec', name: 'Security & Governance', weight: 24 },
+  { key: 'use', name: 'Use Cases & Ecosystem', weight: 20 },
+  { key: 'fun', name: 'MCP Fundamentals', weight: 16 },
+  { key: 'arc', name: 'Architecture & Components', weight: 14 },
+];
+const LESSON_DOMAIN = { start: 'fun', handshake: 'fun', discover: 'arc', headers: 'arc', sessions: 'sec', mrtr: 'int', results: 'int', listen: 'int', streams: 'int', removed: 'int', tasks: 'int', deprecated: 'use', auth: 'sec', wrap: 'use' };
 
 /* Deterministic shuffle so the correct answer isn't always in the same slot.
    Seeded by lesson + question, so the order is stable between visits. */
@@ -53,7 +64,17 @@ function quizHTML(l, q, qi, picked) {
   const letters = 'ABCD';
   return '<div class="q" id="' + a + '" data-q="' + qi + '"><p class="q-t"><span class="q-n">Q' + (qi + 1) + '</span>' + esc(q.q) + lnk(a, 'question ' + (qi + 1)) + '</p><div class="opts">' +
     optionOrder(l.id + ':' + qi + ':' + q.q, q.o.length).map((oi, pos) => '<button type="button" class="opt' + (answered ? (oi === q.a ? ' right' : oi === picked ? ' wrong' : '') : '') + '" data-opt="' + oi + '"' + (answered ? ' disabled' : '') + '><span class="opt-l" aria-hidden="true">' + letters[pos] + '</span>' + esc(q.o[oi]) + '</button>').join('') +
-    '</div>' + (answered ? '<p class="q-x">' + (picked === q.a ? '<b>Correct.</b> ' : '<b>Not quite.</b> ') + q.x + '</p><button type="button" class="q-reset" data-reset="' + qi + '">Try again</button>' : '') + '</div>';
+    '</div>' + (answered ? feedbackHTML(l, q, qi, picked) + '<button type="button" class="q-reset" data-reset="' + qi + '">Try again</button>' : '') + '</div>';
+}
+
+function feedbackHTML(l, q, qi, picked) {
+  const ww = whyWrong(l, qi);
+  let h = '<div class="q-x">';
+  if (picked === q.a) h += '<p><b>Correct.</b> ' + q.x + '</p>';
+  else h += '<p><b>Not quite.</b> ' + (ww[picked] ? esc(ww[picked]) + ' ' : '') + '</p><p><b>The answer:</b> ' + esc(q.o[q.a]) + '. ' + q.x + '</p>';
+  const others = q.o.map((o, i) => [o, i]).filter(([, i]) => i !== q.a && i !== picked && ww[i]);
+  if (others.length) h += '<details class="why-not"><summary>Why not the other options?</summary><ul>' + others.map(([o, i]) => '<li><span class="wn-o">' + esc(o) + '</span> ' + esc(ww[i]) + '</li>').join('') + '</ul></details>';
+  return h + '</div>';
 }
 
 function lessonBody(i) {
@@ -107,6 +128,11 @@ function indexBody() {
     '<h1>What changed in MCP, one change at a time</h1>' +
     '<p class="lede">Fourteen short lessons on the July 2026 revision. Each one covers what changed, why, the wire flow, colour-coded payloads before and after, what breaks on an existing server, how to test it, and a quick self-check.</p>' +
     '<p class="cta"><a class="btn learn" href="' + lessonUrl(LESSONS[0]) + '">Start with lesson 00 →</a><span class="resume" id="resume" hidden></span></p>' +
+    '<div class="practice">' +
+      '<a class="pcard" href="/exam/"><strong>Final exam</strong><span>20 questions weighted like the real MCPA domains, with a readiness score and a link back to every weak spot.</span></a>' +
+      '<a class="pcard" href="/review/"><strong>Review deck</strong><span>Every question you miss comes back after 1, 3 and 7 days until it sticks.</span></a>' +
+      '<a class="pcard" href="/reference-server.mjs" download><strong>Reference server</strong><span>One Node file, no dependencies. Every test command in the course runs against it: <code>node reference-server.mjs</code></span></a>' +
+    '</div>' +
     '<ol class="lesson-grid">' + LESSONS.map((l, i) =>
       '<li><a class="lcard" href="' + lessonUrl(l) + '" data-lesson="' + l.id + '"><span class="lc-top"><span class="n">' + String(i).padStart(2, '0') + '</span><span class="chip ' + l.tag + '">' + esc(l.tagLabel) + '</span><span class="ok"></span></span>' +
       '<strong>' + esc(l.short) + '</strong><span class="lc-d">' + esc(l.lede) + '</span></a></li>').join('') + '</ol>' +
@@ -127,9 +153,10 @@ function pageHTML(opts) {
     '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">' +
     '<link rel="stylesheet" href="/style.css">' +
     (prev ? '<link rel="prev" href="' + lessonUrl(prev) + '">' : '') + (next ? '<link rel="next" href="' + lessonUrl(next) + '">' : '') +
-    '</head><body data-lesson="' + (l ? l.id : '') + '" data-prev="' + (prev ? lessonUrl(prev) : '') + '" data-next="' + (next ? lessonUrl(next) : '') + '">' +
+    '</head><body data-page="' + (opts.page || (l ? 'lesson' : 'home')) + '" data-lesson="' + (l ? l.id : '') + '" data-prev="' + (prev ? lessonUrl(prev) : '') + '" data-next="' + (next ? lessonUrl(next) : '') + '">' +
     '<a class="skip" href="#main">Skip to content</a><header class="top"><div class="top-in"><a class="brand" href="/">MCP 2026-07-28 <small>one change per page</small></a>' +
-    '<button type="button" class="here" id="hereBtn" title="Copy a link to the section you are reading">Copy link to here</button>' +
+    '<nav class="toplinks" aria-label="Practice"><a href="/exam/"' + (opts.page === 'exam' ? ' aria-current="page"' : '') + '>Final exam</a><a href="/review/"' + (opts.page === 'review' ? ' aria-current="page"' : '') + '>Review <span id="dueBadge" class="due" hidden></span></a></nav>' +
+    (l ? '<button type="button" class="here" id="hereBtn" title="Copy a link to the section you are reading">Copy link to here</button>' : '') +
     '<div class="prog" aria-live="polite"><span id="progTxt">' + LESSONS.length + ' lessons</span><span class="bar"><i id="progBar"></i></span></div>' +
     (l ? '<div class="pick"><select id="lessonPick" aria-label="Jump to lesson">' + LESSONS.map((x, i) => '<option value="' + lessonUrl(x) + '"' + (i === cur ? ' selected' : '') + '>' + String(i).padStart(2, '0') + ' · ' + esc(x.short) + '</option>').join('') + '</select></div>' : '') +
     '</div></header>' +
