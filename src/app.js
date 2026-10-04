@@ -6,15 +6,15 @@ function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catc
 
 const body = document.body;
 const lessonId = body.dataset.lesson;
-const lesson = LESSONS.find(l => l.id === lessonId);
+const lesson = ALL.find(l => l.id === lessonId);
 
 function paintProgress() {
-  const done = LESSONS.filter(l => state.learned.includes(l.id)).length;
+  const done = ALL.filter(l => state.learned.includes(l.id)).length;
   const txt = document.getElementById('progTxt'), bar = document.getElementById('progBar');
-  if (txt) txt.textContent = done + ' of ' + LESSONS.length + ' learned';
-  if (bar) bar.style.width = (100 * done / LESSONS.length) + '%';
+  if (txt) txt.textContent = done + ' of ' + ALL.length + ' learned';
+  if (bar) bar.style.width = (100 * done / ALL.length) + '%';
   document.querySelectorAll('[data-lesson] .ok').forEach(el => {
-    const id = el.closest('[data-lesson]').dataset.lesson, l = LESSONS.find(x => x.id === id);
+    const id = el.closest('[data-lesson]').dataset.lesson, l = ALL.find(x => x.id === id);
     if (!l) return;
     const Q = quizzesOf(l), right = Q.filter((q, i) => state.quiz[id + ':' + i] === q.a).length;
     const done = state.learned.includes(id);
@@ -123,8 +123,8 @@ document.addEventListener('keydown', e => {
 if (lesson) { state.last = lesson.id; save(); }
 const resume = document.getElementById('resume');
 if (resume && state.last) {
-  const l = LESSONS.find(x => x.id === state.last);
-  if (l) { resume.hidden = false; resume.innerHTML = 'or <a href="/' + l.id + '/">pick up where you left off: ' + esc(l.short) + '</a>'; }
+  const l = ALL.find(x => x.id === state.last);
+  if (l) { resume.hidden = false; resume.innerHTML = 'or <a href="' + lessonUrl(l) + '">pick up where you left off: ' + esc(l.short) + '</a>'; }
 }
 
 
@@ -133,7 +133,7 @@ const DAY = 86400000, GAPS = [0, DAY, 3 * DAY, 7 * DAY];
 function addToReview(key) { state.review[key] = { box: 1, due: Date.now() }; }
 function dueKeys() { const now = Date.now(); return Object.keys(state.review || {}).filter(k => state.review[k].due <= now && questionByKey(k)); }
 function questionByKey(key) {
-  const [lid, qi] = key.split('#'); const l = LESSONS.find(x => x.id === lid);
+  const [lid, qi] = key.split('#'); const l = ALL.find(x => x.id === lid);
   const q = l && quizzesOf(l)[+qi];
   return q ? { l, q, qi: +qi } : null;
 }
@@ -154,7 +154,7 @@ const examEl = document.getElementById('exam');
 if (examEl) {
   const PLAN = { int: 5, sec: 5, use: 4, fun: 3, arc: 3 };   // 20 questions ≈ MCPA domain weights
   let run = null;
-  const pool = d => LESSONS.filter(l => LESSON_DOMAIN[l.id] === d).flatMap(l => quizzesOf(l).map((q, qi) => ({ l, q, qi, d })));
+  const pool = d => ALL.filter(l => LESSON_DOMAIN[l.id] === d).flatMap(l => quizzesOf(l).map((q, qi) => ({ l, q, qi, d })));
   function start() {
     const qs = shuffled(Object.entries(PLAN).flatMap(([d, n]) => shuffled(pool(d)).slice(0, n)));
     run = { qs, i: 0, picks: [] };
@@ -183,7 +183,7 @@ if (examEl) {
       : ['not-yet', 'Not yet.', 'Work through the lessons you missed, then use the review deck daily for a week before retaking.'];
     examEl.innerHTML = '<div class="result ' + verdict[0] + '"><p class="score">' + score + '<small>%</small></p><div><p class="verdict">' + verdict[1] + '</p><p>' + verdict[2] + '</p></div></div>' +
       '<h2 class="sub">By domain</h2><ul class="dom-bars">' + byD.map(x => '<li><span>' + x.d.name + ' <small>(' + x.d.weight + '% of MCPA)</small></span><span class="db"><i style="width:' + (x.n ? 100 * x.ok / x.n : 0) + '%"></i></span><b>' + x.ok + '/' + x.n + '</b></li>').join('') + '</ul>' +
-      (missed.length ? '<h2 class="sub">Revisit</h2><ul class="missed">' + missed.map(([it]) => '<li><a href="/' + it.l.id + '/#q' + (it.qi + 1) + '">' + esc(it.l.short) + '</a> ' + esc(it.q.q) + '</li>').join('') + '</ul><p class="note-sm">All ' + missed.length + ' are now in your <a href="/review/">review deck</a>.</p>' : '<p class="note-sm">A perfect run. Try again for a different set of questions.</p>') +
+      (missed.length ? '<h2 class="sub">Revisit</h2><ul class="missed">' + missed.map(([it]) => '<li><a href="' + lessonUrl(it.l) + '#q' + (it.qi + 1) + '">' + esc(it.l.short) + '</a> ' + esc(it.q.q) + '</li>').join('') + '</ul><p class="note-sm">All ' + missed.length + ' are now in your <a href="/review/">review deck</a>.</p>' : '<p class="note-sm">A perfect run. Try again for a different set of questions.</p>') +
       '<p class="cta"><button type="button" class="btn learn" data-start="1">Take it again</button><a class="btn" href="/">Back to the lessons</a></p>';
     window.scrollTo(0, 0);
   }

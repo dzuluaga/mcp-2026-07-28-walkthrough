@@ -35,7 +35,7 @@ function highlight(lines, lang) {
 function parseBlock(b) {
   const raw = b.text.split('\n');
   return raw.map(l => {
-    if (!b.d) return { cls: '', text: l };
+    if (!(b.d || (b.d === undefined && /^[+-] /m.test(b.text)))) return { cls: '', text: l };
     const g = l.slice(0, 2), text = l.slice(2);
     return { cls: g === '+ ' ? 'add' : g === '- ' ? 'del' : g === '* ' ? 'hl' : '', text };
   });
@@ -44,7 +44,7 @@ let codeStore = [];
 function codeBlock(b, label, era, anchor) {
   const lines = parseBlock(b);
   const id = codeStore.push(lines.map(l => l.text).join('\n')) - 1;
-  return '<div class="code-wrap"' + (anchor ? ' id="' + anchor + '"' : '') + '><div class="code-head">' + (era ? '<span class="era ' + era + '">' + (era === 'legacy' ? 'Legacy' : era === 'modern' ? '2026-07-28' : 'Shell') + '</span>' : '') +
+  return '<div class="code-wrap"' + (anchor ? ' id="' + anchor + '"' : '') + '><div class="code-head">' + (era ? '<span class="era ' + era + '">' + ({ legacy: 'Legacy', modern: '2026-07-28', shell: 'Shell', bad: 'Unsafe', good: 'Safe', ok: 'Example', err: 'Error' }[era] || era) + '</span>' : '') +
     '<span>' + esc(label || '') + '</span>' + (anchor ? lnk(anchor, label) : '') + '<button class="copy" data-copy="' + id + '" type="button">Copy</button></div>' +
     '<pre class="code" tabindex="0" aria-label="' + esc((label ? label + ' ' : '') + 'code') + '"><code>' + highlight(lines, b.lang || 'json') + '</code></pre></div>';
 }
@@ -58,7 +58,8 @@ function seqSVG(d) {
     if (s.n !== undefined) {
       const a = xs[s.a ?? 0], b = xs[s.b ?? n - 1];
       const half = Math.max(80, s.n.length * 3.2);
-      const xl = Math.max(4, Math.min(a, b) - (a === b ? half : 70)), xr = Math.min(W - 4, Math.max(a, b) + (a === b ? half : 70));
+      let xl = Math.max(4, Math.min(a, b) - (a === b ? half : 70)), xr = Math.min(W - 4, Math.max(a, b) + (a === b ? half : 70));
+      if (a === b) { const w = Math.min(W - 8, 2 * half), cx = Math.min(Math.max(a, w / 2 + 4), W - w / 2 - 4); xl = cx - w / 2; xr = cx + w / 2; }
       body += '<rect class="sq-note ' + (s.k || '') + '" x="' + xl + '" y="' + (y - 2) + '" width="' + (xr - xl) + '" height="26" rx="4"/>' +
         '<text class="sq-nt" x="' + ((xl + xr) / 2) + '" y="' + (y + 15) + '" text-anchor="middle">' + esc(s.n) + '</text>';
       y += 36; continue;

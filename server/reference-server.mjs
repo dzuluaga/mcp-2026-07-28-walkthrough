@@ -6,8 +6,16 @@
 //   node reference-server.mjs --stdio    # newline-delimited JSON-RPC on stdin/stdout
 //   PORT=4000 node reference-server.mjs
 //
-// Demo auth: "Authorization: Bearer <name>" makes <name> the caller (e.g. alice, bob).
+// Demo auth on /mcp: "Authorization: Bearer <name>" makes <name> the caller (e.g. alice, bob).
 // No header means the caller is "anonymous".
+//
+// /secure/mcp is an OAuth-protected resource server (track 2, authorization lesson):
+//   401 + WWW-Authenticate resource_metadata, Protected Resource Metadata at
+//   /.well-known/oauth-protected-resource/secure/mcp, audience checks, 403 insufficient_scope.
+//   Demo access tokens (pretend they came from https://auth.example.com):
+//     token-read   aud = this server, scope files:read
+//     token-write  aud = this server, scope files:read files:write
+//     token-other  aud = https://other.example/mcp (valid token, wrong audience)
 
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -35,13 +43,17 @@ const E = {
 /* ---------------- tools ---------------- */
 let betaTool = false;
 const TOOLS = () => [
-  { name: 'add_to_cart', description: 'Add an item to a cart you own.', inputSchema: { type: 'object', properties: { cartId: { type: 'string' }, sku: { type: 'string' } }, required: ['cartId', 'sku'] } },
+  { name: 'add_to_cart', description: 'Add an item to a cart you own.', inputSchema: { type: 'object', properties: { cartId: { type: 'string' }, sku: { type: 'string' } }, required: ['cartId', 'sku'] }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   ...(betaTool ? [{ name: 'beta_search', description: 'A tool that appears and disappears (see toggle_beta_tool).', inputSchema: { type: 'object', properties: { q: { type: 'string' } } } }] : []),
+  { name: 'book_flight', description: 'Books a (pretend) flight. Dates in the past come back as a tool execution error.', inputSchema: { type: 'object', properties: { to: { type: 'string' }, date: { type: 'string', format: 'date' } }, required: ['to', 'date'] } },
   { name: 'build_report', description: 'Slow (10 s). Streams progress and logs; becomes a Task if you opt in to the tasks extension.', inputSchema: { type: 'object', properties: { month: { type: 'string' } }, required: ['month'] } },
+  { name: 'connect_billing', description: 'Needs an API key: asks for it with URL-mode elicitation so the secret never passes through the client.', inputSchema: { type: 'object', properties: {} } },
   { name: 'create_cart', description: 'Create a cart and return its handle.', inputSchema: { type: 'object', properties: {} } },
   { name: 'create_repo', description: 'Needs your GitHub username: demonstrates Multi Round-Trip Requests.', inputSchema: { type: 'object', properties: { repo: { type: 'string' } }, required: ['repo'] } },
   { name: 'execute_sql', description: 'Pretend SQL. region is mirrored into the Mcp-Param-Region header.', inputSchema: { type: 'object', properties: { region: { type: 'string', 'x-mcp-header': 'Region' }, query: { type: 'string' } }, required: ['region', 'query'] } },
-  { name: 'get_weather', description: 'Made-up weather.', inputSchema: { type: 'object', properties: { location: { type: 'string' } }, required: ['location'] } },
+  { name: 'get_weather_data', title: 'Weather data', description: 'Structured weather with an outputSchema.', inputSchema: { type: 'object', properties: { location: { type: 'string' } }, required: ['location'] },
+    outputSchema: { type: 'object', properties: { temperature: { type: 'number', description: 'Temperature in celsius' }, conditions: { type: 'string', description: 'Weather conditions description' }, humidity: { type: 'number', description: 'Humidity percentage' } }, required: ['temperature', 'conditions', 'humidity'] } },
+  { name: 'get_weather', description: 'Made-up weather.', inputSchema: { type: 'object', properties: { location: { type: 'string' } }, required: ['location'] }, annotations: { title: 'Get weather', readOnlyHint: true, openWorldHint: true } },
   { name: 'toggle_beta_tool', description: 'Adds or removes beta_search and notifies toolsListChanged listeners.', inputSchema: { type: 'object', properties: {} } },
   { name: 'touch_config', description: 'Pretends file:///project/config.json changed and notifies its subscribers.', inputSchema: { type: 'object', properties: {} } },
 ].sort((a, b) => a.name.localeCompare(b.name));   // deterministic order
@@ -74,6 +86,30 @@ async function callTool(params, ctx) {
   const a = params.arguments || {};
   switch (params.name) {
     case 'get_weather': return complete(text((a.location || 'Somewhere') + ': 14°C, light rain'));
+    case 'get_weather_data': {
+      const data = { temperature: 22.5, conditions: 'Partly cloudy', humidity: 65 };
+      return complete({ content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data });   // text copy for older clients
+    }
+    case 'book_flight': {
+      const today = new Date().toISOString().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(a.date || '')) return complete({ ...text('Invalid date: use YYYY-MM-DD.'), isError: true });
+      if (a.date < today) return complete({ ...text('Invalid departure date: must be in the future. Current date is ' + today + '.'), isError: true });
+      return complete(text('Booked a seat to ' + (a.to || 'somewhere') + ' on ' + a.date + '.'));
+    }
+    case 'connect_billing': {
+      if (params.requestState !== undefined) openState(params.requestState, ctx, 'tools/call', params);
+      const r = params.inputResponses?.billing_key;
+      if (r && params.requestState !== undefined) {
+        if (r.action === 'accept') return complete(text('Billing connected. (The key went straight to the server\'s own page; this client never saw it.)'));
+        return complete({ ...text('Billing not connected: the user chose ' + r.action + '.'), isError: true });
+      }
+      if (!ctx.caps.elicitation?.url) throw E.capability(['elicitation.url']);
+      return {
+        resultType: 'input_required',
+        inputRequests: { billing_key: { method: 'elicitation/create', params: { mode: 'url', url: 'https://mcp.example.com/ui/set_api_key', message: 'Please provide your API key to continue.' } } },
+        requestState: sealState({ p: ctx.principal, exp: Date.now() + 10 * 60_000, d: digest('tools/call', params) }),
+      };
+    }
     case 'create_cart': {
       const cartId = 'cart_' + crypto.randomBytes(9).toString('base64url');
       carts.set(cartId, { owner: ctx.principal, items: [] });
@@ -156,6 +192,30 @@ function ownTask(params, ctx) {
   return t;
 }
 
+/* ---------------- OAuth-protected resource (/secure/mcp) ---------------- */
+const DEMO_TOKENS = {
+  'token-read': { sub: 'alice', aud: 'SELF', scope: ['files:read'] },
+  'token-write': { sub: 'alice', aud: 'SELF', scope: ['files:read', 'files:write'] },
+  'token-other': { sub: 'alice', aud: 'https://other.example/mcp', scope: ['files:read', 'files:write'] },
+};
+const SECURE_TOOLS = [
+  { name: 'read_file', description: 'Read a project file (needs files:read).', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] }, annotations: { readOnlyHint: true, openWorldHint: false }, scope: 'files:read' },
+  { name: 'write_file', description: 'Write a project file (needs files:write).', inputSchema: { type: 'object', properties: { path: { type: 'string' }, text: { type: 'string' } }, required: ['path', 'text'] }, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }, scope: 'files:write' },
+];
+class HttpChallenge extends Error { constructor(status, header, body) { super('challenge'); this.status = status; this.header = header; this.body = body; } }
+function secureDispatch(msg, params, ctx) {
+  const visible = SECURE_TOOLS.filter(t => ctx.scopes.includes(t.scope)).map(({ scope, ...t }) => t);   // list MAY vary by authorization
+  if (msg.method === 'tools/list') return complete({ tools: visible, ttlMs: 60000, cacheScope: 'private' });
+  if (msg.method === 'tools/call') {
+    const tool = SECURE_TOOLS.find(t => t.name === params.name);
+    if (!tool) throw E.invalid('Unknown tool: ' + params.name);
+    if (!ctx.scopes.includes(tool.scope))
+      throw new HttpChallenge(403, 'Bearer error="insufficient_scope", scope="' + tool.scope + '", resource_metadata="' + ctx.prmUrl + '", error_description="' + tool.scope + ' permission required for this operation"');
+    return complete(text(tool.name === 'read_file' ? 'Contents of ' + params.arguments?.path + ': hello' : 'Wrote ' + params.arguments?.path));
+  }
+  throw E.method(msg.method);
+}
+
 /* ---------------- subscriptions ---------------- */
 function notify(kind, msg) {
   for (const l of listeners) if (l.kinds.has(kind)) l.send(msg);
@@ -175,17 +235,44 @@ async function dispatch(msg, ctx) {
   ctx.logLevel = meta['io.modelcontextprotocol/logLevel'];
   ctx.progressToken = meta.progressToken;
   if (ctx.validateHeaders) ctx.validateHeaders(msg, params);
+  if (meta.traceparent) log('trace', msg.method, (params.name || params.uri || ''), 'traceparent=' + meta.traceparent, 'user=' + ctx.principal);
+  if (ctx.secure) return secureDispatch(msg, params, ctx);
 
   switch (msg.method) {
     case 'server/discover':
-      return complete({ supportedVersions: [VERSION], capabilities: { tools: { listChanged: true }, resources: { subscribe: true }, logging: {}, extensions: { 'io.modelcontextprotocol/tasks': {} } },
+      return complete({ supportedVersions: [VERSION], capabilities: { tools: { listChanged: true }, resources: { subscribe: true }, prompts: {}, completions: {}, logging: {}, extensions: { 'io.modelcontextprotocol/tasks': {} } },
         instructions: 'A teaching server for the MCP 2026-07-28 walkthrough. See tools/list.', ttlMs: 3600000, cacheScope: 'public' });
     case 'tools/list': return complete({ tools: TOOLS(), ttlMs: 300000, cacheScope: 'public' });
     case 'tools/call': return callTool(params, ctx);
-    case 'resources/list': return complete({ resources: [{ uri: 'app://me/settings', name: 'Your settings' }, { uri: 'file:///project/config.json', name: 'Project config' }], ttlMs: 300000, cacheScope: 'public' });
+    case 'resources/list': {
+      // page size 2, opaque cursor: clients must follow nextCursor until it is absent
+      const all = [{ uri: 'app://me/settings', name: 'Your settings', mimeType: 'application/json' }, { uri: 'file:///project/config.json', name: 'Project config', mimeType: 'application/json' }, { uri: 'file:///project/README.md', name: 'README', mimeType: 'text/markdown', annotations: { audience: ['user', 'assistant'], priority: 0.8 } }];
+      let start = 0;
+      if (params.cursor !== undefined) {
+        try { start = JSON.parse(Buffer.from(params.cursor, 'base64').toString()).o; } catch { start = NaN; }
+        if (!Number.isInteger(start) || start < 0 || start >= all.length) throw E.invalid('Invalid cursor');
+      }
+      const page = all.slice(start, start + 2), more = start + 2 < all.length;
+      return complete({ resources: page, ...(more ? { nextCursor: Buffer.from(JSON.stringify({ o: start + 2 })).toString('base64') } : {}), ttlMs: 300000, cacheScope: 'public' });
+    }
+    case 'prompts/list': return complete({ prompts: [{ name: 'code_review', title: 'Request Code Review', description: 'Asks the LLM to analyze code quality and suggest improvements', arguments: [{ name: 'code', description: 'The code to review', required: true }, { name: 'language', description: 'Programming language', required: false }] }], ttlMs: 600000, cacheScope: 'public' });
+    case 'prompts/get': {
+      if (params.name !== 'code_review') throw E.invalid('Unknown prompt: ' + params.name);
+      const code = params.arguments?.code;
+      if (typeof code !== 'string' || !code) throw E.invalid('Missing required argument: code');
+      return complete({ description: 'Code review prompt', messages: [{ role: 'user', content: { type: 'text', text: 'Please review this ' + (params.arguments.language || '') + (params.arguments.language ? ' ' : '') + 'code:\n' + code } }] });
+    }
+    case 'completion/complete': {
+      if (params.ref?.type !== 'ref/prompt' || params.ref.name !== 'code_review') throw E.invalid('Unknown reference');
+      const langs = ['go', 'java', 'javascript', 'python', 'pytorch', 'pyside', 'rust', 'typescript'];
+      if (params.argument?.name !== 'language') return complete({ completion: { values: [], hasMore: false } });
+      const v = langs.filter(x => x.startsWith(String(params.argument.value || '').toLowerCase()));
+      return complete({ completion: { values: v.slice(0, 100), total: v.length, hasMore: v.length > 100 } });
+    }
     case 'resources/read':
       if (params.uri === 'app://me/settings') return complete({ contents: [{ uri: params.uri, mimeType: 'application/json', text: JSON.stringify({ user: ctx.principal, theme: 'dark' }) }], ttlMs: 60000, cacheScope: 'private' });
       if (params.uri === 'file:///project/config.json') return complete({ contents: [{ uri: params.uri, mimeType: 'application/json', text: '{"debug":false}' }], ttlMs: 60000, cacheScope: 'public' });
+      if (params.uri === 'file:///project/README.md') return complete({ contents: [{ uri: params.uri, mimeType: 'text/markdown', text: '# Demo project\nUsed by the MCP walkthrough.' }], ttlMs: 60000, cacheScope: 'public' });
       throw E.invalid('Resource not found', { uri: params.uri });
     case 'tasks/get': return complete(taskView(ownTask(params, ctx)));
     case 'tasks/update': {
@@ -238,8 +325,24 @@ function serveHttp() {
   http.createServer((req, res) => {
     const origin = req.headers.origin;
     if (origin && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) { res.writeHead(403).end(); return; }
-    if (req.url.split('?')[0] === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok'); return; }
-    if (req.url.split('?')[0] !== '/mcp') { res.writeHead(404).end(); return; }
+    const path = req.url.split('?')[0];
+    const origin_ = 'http://' + (req.headers.host || 'localhost:' + port);
+    const prmUrl = origin_ + '/.well-known/oauth-protected-resource/secure/mcp';
+    if (path === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok'); return; }
+    if (path === '/.well-known/oauth-protected-resource/secure/mcp') {
+      return sendJson(res, 200, { resource: origin_ + '/secure/mcp', authorization_servers: ['https://auth.example.com'], scopes_supported: ['files:read', 'files:write'], bearer_methods_supported: ['header'] });
+    }
+    const secure = path === '/secure/mcp';
+    if (path !== '/mcp' && !secure) { res.writeHead(404).end(); return; }
+    let scopes = [];
+    if (secure && req.method === 'POST') {
+      const tok = (/^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '') || [])[1];   // header only: never the query string
+      const info = tok && DEMO_TOKENS[tok];
+      const challenge = 'Bearer resource_metadata="' + prmUrl + '", scope="files:read"';
+      if (!info) { res.writeHead(401, { 'WWW-Authenticate': challenge + (tok ? ', error="invalid_token"' : '') }).end(); return; }
+      if (info.aud !== 'SELF') { log('rejected token issued for', info.aud, '(audience check)'); res.writeHead(401, { 'WWW-Authenticate': challenge + ', error="invalid_token", error_description="token audience is not this server"' }).end(); return; }
+      scopes = info.scope;
+    }
     if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST' }).end(); return; }   // GET/DELETE belonged to sessions
     let raw = '';
     req.on('data', c => { raw += c; });
@@ -252,7 +355,8 @@ function serveHttp() {
       let sse = false;
       const startSse = () => { if (!sse) { sse = true; res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' }); } };
       const ctx = {
-        principal: (/^Bearer\s+(\S+)/i.exec(req.headers.authorization || '') || [])[1] || 'anonymous',
+        secure, scopes, prmUrl,
+        principal: secure ? 'alice' : ((/^Bearer\s+(\S+)/i.exec(req.headers.authorization || '') || [])[1] || 'anonymous'),
         signal: ac.signal, validateHeaders: headerValidator(req),
         notify: m => { startSse(); res.write('data: ' + JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n\n'); },
         listen: (m, p) => new Promise(() => {
@@ -273,11 +377,12 @@ function serveHttp() {
         if (sse) { res.end('data: ' + JSON.stringify(body) + '\n\n'); } else sendJson(res, 200, body);
       } catch (e) {
         if (ac.signal.aborted) return;
+        if (e instanceof HttpChallenge) { res.writeHead(e.status, { 'WWW-Authenticate': e.header }).end(); return; }
         if (!(e instanceof RpcError)) { log('error', e.stack || e); e = new RpcError(-32603, 'Internal error', undefined, 500); }
         if (sse) res.end('data: ' + JSON.stringify(errBody(msg.id, e)) + '\n\n'); else sendJson(res, e.http, errBody(msg.id, e));
       }
     });
-  }).listen(port, '127.0.0.1', () => log(`MCP ${VERSION} reference server on http://localhost:${port}/mcp  (GET /healthz for health checks)`));
+  }).listen(port, '127.0.0.1', () => log(`MCP ${VERSION} reference server on http://localhost:${port}/mcp  (OAuth demo: /secure/mcp, health: /healthz)`));
 }
 function sendJson(res, status, body) { res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(body)); }
 

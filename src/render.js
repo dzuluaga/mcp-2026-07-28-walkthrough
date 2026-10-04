@@ -1,11 +1,22 @@
 /* ---------- page rendering (runs at build time and in the browser) ---------- */
 const SITE_TITLE = 'MCP 2026-07-28 Walkthrough';
 const slug = s => String(s).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
-const lessonUrl = l => '/' + l.id + '/';
 
-const extrasOf = l => (typeof EXTRAS !== 'undefined' && EXTRAS[l.id]) || {};
+/* Two tracks share one site: the July changes, then core MCP & security */
+const TRACKS = [
+  { id: 'changes', name: 'What changed in 2026-07-28', label: 'Track 1', base: '/', blurb: 'Fourteen short lessons on the July 2026 revision: what changed, why, the wire flow, colour-coded payloads before and after, what breaks on an existing server, and how to test it.' },
+  { id: 'core', name: 'Core MCP & Security', label: 'Track 2', base: '/core/', blurb: 'The rest of the exam: hosts, clients and servers, the primitives, a tool call end to end, transports, authorization, the named attacks, consent, and the ecosystem.' },
+];
+const ALL = LESSONS.map(l => Object.assign(l, { track: l.track || 'changes' }))
+  .concat(typeof CORE_LESSONS !== 'undefined' ? CORE_LESSONS.map(l => Object.assign(l, { track: 'core' })) : []);
+const trackOf = l => TRACKS.find(t => t.id === l.track);
+const inTrack = l => ALL.filter(x => x.track === l.track);
+const lessonUrl = l => trackOf(l).base + l.id + '/';
+const numOf = l => String(inTrack(l).indexOf(l)).padStart(2, '0');
+
+const extrasOf = l => (typeof EXTRAS !== 'undefined' && EXTRAS[l.id]) || l.extras || {};
 const quizzesOf = l => (l.quiz || []).concat(extrasOf(l).moreQuiz || [], (typeof PRACTICE_QUIZ !== 'undefined' && PRACTICE_QUIZ[l.id]) || []);
-const whyWrong = (l, qi) => (typeof WHY_WRONG !== 'undefined' && WHY_WRONG[l.id + '#' + qi]) || {};
+const whyWrong = (l, qi) => (typeof WHY_WRONG !== 'undefined' && WHY_WRONG[l.id + '#' + qi]) || (l.whyWrong && l.whyWrong[qi]) || {};
 
 /* Primary MCPA domain for each lesson, with the exam's weights */
 const DOMAINS = [
@@ -16,6 +27,7 @@ const DOMAINS = [
   { key: 'arc', name: 'Architecture & Components', weight: 14 },
 ];
 const LESSON_DOMAIN = { start: 'fun', handshake: 'fun', discover: 'arc', headers: 'arc', sessions: 'sec', mrtr: 'int', results: 'int', listen: 'int', streams: 'int', removed: 'int', tasks: 'int', deprecated: 'use', auth: 'sec', wrap: 'use' };
+ALL.forEach(l => { if (l.examDomain) LESSON_DOMAIN[l.id] = l.examDomain; });
 
 /* Deterministic shuffle so the correct answer isn't always in the same slot.
    Seeded by lesson + question, so the order is stable between visits. */
@@ -31,14 +43,15 @@ function lnk(anchor, label) {
   return '<button type="button" class="lnk" data-link="' + anchor + '" aria-label="Copy link to ' + esc(label || 'this section') + '" title="Copy link">#</button>';
 }
 
+/* Section headings differ by track: track 1 is about change, track 2 about how things work */
 function sectionsOf(l) {
-  const s = [];
+  const core = l.track === 'core', s = [];
   if (extrasOf(l).story) s.push(['real-life', 'In real life']);
-  if (l.what) s.push(['what', l.id === 'wrap' ? 'The migration, in order' : 'What changed']);
-  if (l.why) s.push(['why', 'Why it changed']);
+  if (l.what) s.push(['what', l.id === 'wrap' ? 'The migration, in order' : core ? 'How it works' : 'What changed']);
+  if (l.why) s.push(['why', core ? 'Why it matters' : 'Why it changed']);
   if (l.seq) s.push(['wire', 'On the wire']);
-  if (l.payloads) s.push(['payloads', 'Payloads, before and after']);
-  if (l.impact) s.push(['impact', 'What it does to an existing server']);
+  if (l.payloads) s.push(['payloads', core ? 'Payloads' : 'Payloads, before and after']);
+  if (l.impact) s.push(['impact', core ? 'What goes wrong in practice' : 'What it does to an existing server']);
   if (l.test) s.push(['test', 'How to test it']);
   if (quizzesOf(l).length) s.push(['quiz', 'Check yourself']);
   if (l.links) s.push(['spec', 'Read the spec']);
@@ -46,12 +59,14 @@ function sectionsOf(l) {
 }
 
 function railHTML(cur) {
-  return LESSONS.map((l, i) => {
-    let li = '<li><a class="lesson" href="' + lessonUrl(l) + '" data-lesson="' + l.id + '"' + (i === cur ? ' aria-current="page"' : '') + '><span class="n">' + String(i).padStart(2, '0') +
+  const t = trackOf(cur);
+  return '<p class="rail-track">' + esc(t.label) + ' · ' + esc(t.name) + '</p><ol id="railList">' + inTrack(cur).map(l => {
+    let li = '<li><a class="lesson" href="' + lessonUrl(l) + '" data-lesson="' + l.id + '"' + (l === cur ? ' aria-current="page"' : '') + '><span class="n">' + numOf(l) +
       '</span><span><span class="dot ' + l.tag + '" title="' + esc(l.tagLabel) + '"><span class="sr-only">' + esc(l.tagLabel) + ': </span></span>' + esc(l.short) + '</span><span class="ok"></span></a>';
-    if (i === cur) li += '<ul class="toc">' + sectionsOf(l).map(([k, t]) => '<li><a href="#' + k + '" data-toc="' + k + '">' + esc(t) + '</a></li>').join('') + '</ul>';
+    if (l === cur) li += '<ul class="toc">' + sectionsOf(l).map(([k, tt]) => '<li><a href="#' + k + '" data-toc="' + k + '">' + esc(tt) + '</a></li>').join('') + '</ul>';
     return li + '</li>';
-  }).join('');
+  }).join('') + '</ol>' +
+  TRACKS.filter(x => x.id !== t.id && ALL.some(l => l.track === x.id)).map(x => '<p class="rail-other"><a href="' + lessonUrl(ALL.find(l => l.track === x.id)) + '">' + esc(x.label) + ': ' + esc(x.name) + ' →</a></p>').join('');
 }
 
 function sec(key, title, html) {
@@ -77,10 +92,9 @@ function feedbackHTML(l, q, qi, picked) {
   return h + '</div>';
 }
 
-function lessonBody(i) {
-  const l = LESSONS[i];
-  const T = Object.fromEntries(sectionsOf(l));
-  let h = '<div class="kick"><span class="chip ' + l.tag + '">' + esc(l.tagLabel) + '</span><span class="chip domain">' + esc(l.domain) + '</span><span class="pos">' + (i + 1) + ' / ' + LESSONS.length + '</span></div>';
+function lessonBody(l) {
+  const T = Object.fromEntries(sectionsOf(l)), list = inTrack(l), i = list.indexOf(l);
+  let h = '<div class="kick"><span class="chip ' + l.tag + '">' + esc(l.tagLabel) + '</span><span class="chip domain">' + esc(l.domain) + '</span><span class="pos">' + esc(trackOf(l).label) + ' · ' + (i + 1) + ' / ' + list.length + '</span></div>';
   h += '<h1 id="top">' + esc(l.title) + '</h1><p class="lede">' + esc(l.lede) + '</p>';
   const X = extrasOf(l);
   if (X.tldr) h += '<aside class="tldr" aria-label="Exam TL;DR"><p class="tldr-h">Exam TL;DR</p><ul>' + X.tldr.map(t => '<li>' + esc(t) + '</li>').join('') + '</ul></aside>';
@@ -90,18 +104,20 @@ function lessonBody(i) {
   if (l.why) h += sec('why', T.why, '<div class="call why prose">' + l.why + '</div>');
   if (l.seq) {
     const s = l.seq, both = s.before && s.after;
-    h += sec('wire', T.wire, '<figure class="fig" style="margin:0"><div class="fig-bar"><strong>' + (both ? 'Same job, two eras' : 'Message flow in 2026-07-28') + '</strong>' +
-      (both ? '<div class="seg-wrap"><span class="seg-l" id="seg-l">Compare</span><div class="seg" role="group" aria-labelledby="seg-l"><button type="button" data-era="before" aria-pressed="true">Legacy</button><button type="button" data-era="after" aria-pressed="false">2026-07-28</button></div></div>' : '') +
-      '</div>' + (both ? '<p class="fig-prompt">This is the old flow. Before you switch to <strong>2026-07-28</strong>, try to predict what disappears and what replaces it.</p>' : '') +
+    const labels = s.labels || ['Legacy', '2026-07-28'];
+    const prompt = s.prompt || 'This is the old flow. Before you switch to <strong>2026-07-28</strong>, try to predict what disappears and what replaces it.';
+    h += sec('wire', T.wire, '<figure class="fig" style="margin:0"><div class="fig-bar"><strong>' + esc(s.title || (both ? 'Same job, two eras' : 'Message flow in 2026-07-28')) + '</strong>' +
+      (both ? '<div class="seg-wrap"><span class="seg-l" id="seg-l">Compare</span><div class="seg" role="group" aria-labelledby="seg-l"><button type="button" data-era="before" aria-pressed="true">' + esc(labels[0]) + '</button><button type="button" data-era="after" aria-pressed="false">' + esc(labels[1]) + '</button></div></div>' : '') +
+      '</div>' + (both ? '<p class="fig-prompt">' + prompt + '</p>' : '') +
       '<div class="fig-scroll" tabindex="0" role="region" aria-label="Sequence diagram, scrolls sideways">' + (s.before ? '<div data-pane="before">' + seqSVG(s.before) + '</div>' : '') +
       (s.after ? '<div data-pane="after"' + (both ? ' hidden' : '') + '>' + seqSVG(s.after) + '</div>' : '') + '</div>' +
-      '<figcaption class="fig-cap">Solid arrows are requests, dashed are responses or notifications. <span style="color:var(--del)">Red ✕</span> is gone; <span style="color:var(--add)">green</span> is new.</figcaption></figure>');
+      '<figcaption class="fig-cap">Solid arrows are requests, dashed are responses or notifications. <span style="color:var(--del)">Red ✕</span> ' + (l.track === 'core' ? 'is the unsafe or failing step' : 'is gone') + '; <span style="color:var(--add)">green</span> ' + (l.track === 'core' ? 'is the step that keeps you safe' : 'is new') + '.</figcaption></figure>');
   }
   if (l.payloads) {
     h += sec('payloads', T.payloads, l.payloads.map(p => {
-      const a = 'payload-' + slug(p.t);
+      const a = 'payload-' + slug(p.t), eras = p.eras || ['legacy', 'modern'];
       return '<div class="pay" id="' + a + '"><p class="pay-t"><a class="hl" href="#' + a + '">' + esc(p.t) + '</a>' + lnk(a, p.t) + '</p>' +
-        (p.before ? codeBlock(p.before, 'before', 'legacy') : '') + (p.after ? codeBlock(p.after, p.before ? 'after' : '', 'modern') : '') +
+        (p.before ? codeBlock(p.before, p.before.label || 'before', eras[0]) : '') + (p.after ? codeBlock(p.after, p.after.label || (p.before ? 'after' : ''), eras[1]) : '') +
         (p.cap ? '<p class="pay-cap">' + esc(p.cap) + '</p>' : '') + '</div>';
     }).join(''));
   }
@@ -114,37 +130,43 @@ function lessonBody(i) {
   const Q = quizzesOf(l);
   if (Q.length) h += sec('quiz', T.quiz, '<p class="quiz-note">Answer all ' + Q.length + ' correctly and this lesson is marked as learned.</p>' + Q.map((q, qi) => quizHTML(l, q, qi)).join(''));
   if (l.links) h += sec('spec', T.spec, '<div class="links">' + l.links.map(([t, u]) => '<a href="' + u + '" target="_blank" rel="noopener">' + esc(t) + ' ↗</a>').join('') + '</div>');
-  const prev = LESSONS[i - 1], next = LESSONS[i + 1];
+  const k = ALL.indexOf(l), prev = ALL[k - 1], next = ALL[k + 1];
+  const crossNext = next && next.track !== l.track, crossPrev = prev && prev.track !== l.track;
   h += '<div class="nav">' +
-    (prev ? '<a class="btn prev" rel="prev" href="' + lessonUrl(prev) + '"><small>← Previous</small>' + esc(prev.short) + '</a>' : '<a class="btn prev" href="/"><small>← Contents</small>All lessons</a>') +
+    (prev ? '<a class="btn prev" rel="prev" href="' + lessonUrl(prev) + '"><small>← ' + (crossPrev ? 'Back to ' + esc(trackOf(prev).label) : 'Previous') + '</small>' + esc(prev.short) + '</a>' : '<a class="btn prev" href="/"><small>← Contents</small>All lessons</a>') +
     '<button type="button" class="btn learn" id="learnBtn" data-id="' + l.id + '">Mark as learned</button>' +
-    (next ? '<a class="btn next" rel="next" href="' + lessonUrl(next) + '"><small>Next →</small>' + esc(next.short) + '</a>' : '<a class="btn next" href="/"><small>Done →</small>Contents</a>') +
+    (next ? '<a class="btn next" rel="next" href="' + lessonUrl(next) + '"><small>' + (crossNext ? 'Start ' + esc(trackOf(next).label) + ' →' : 'Next →') + '</small>' + esc(crossNext ? trackOf(next).name : next.short) + '</a>' : '<a class="btn next" href="/exam/"><small>Done →</small>Take the final exam</a>') +
     '</div><p class="kbd">Tip: ← and → move between lessons. Hover any heading and press # to copy a link to it.</p>';
   return h;
 }
 
+function trackGrid(t) {
+  return '<section class="track" id="' + t.id + '"><div class="track-h"><p class="eyebrow">' + esc(t.label) + '</p><h2>' + esc(t.name) + '</h2><p>' + esc(t.blurb) + '</p></div>' +
+    '<ol class="lesson-grid">' + ALL.filter(l => l.track === t.id).map(l =>
+      '<li><a class="lcard" href="' + lessonUrl(l) + '" data-lesson="' + l.id + '"><span class="lc-top"><span class="n">' + numOf(l) + '</span><span class="chip ' + l.tag + '">' + esc(l.tagLabel) + '</span><span class="ok"></span></span>' +
+      '<strong>' + esc(l.short) + '</strong><span class="lc-d">' + esc(l.lede) + '</span></a></li>').join('') + '</ol></section>';
+}
+
 function indexBody() {
-  return '<p class="eyebrow">Model Context Protocol · specification revision 2026-07-28</p>' +
-    '<h1>What changed in MCP, one change at a time</h1>' +
-    '<p class="lede">Fourteen short lessons on the July 2026 revision. Each one covers what changed, why, the wire flow, colour-coded payloads before and after, what breaks on an existing server, how to test it, and a quick self-check.</p>' +
-    '<p class="cta"><a class="btn learn" href="' + lessonUrl(LESSONS[0]) + '">Start with lesson 00 →</a><span class="resume" id="resume" hidden></span></p>' +
+  const core = ALL.find(l => l.track === 'core');
+  return '<p class="eyebrow">Model Context Protocol · specification revision 2026-07-28 · MCPA prep</p>' +
+    '<h1>Learn MCP the way you\'ll use it</h1>' +
+    '<p class="lede">Two tracks, one lesson per page. Every lesson starts with a real incident, shows the messages on the wire, and ends with tests you can run and questions that catch the classic mistakes.</p>' +
+    '<p class="cta"><a class="btn learn" href="' + lessonUrl(ALL[0]) + '">Track 1: the July changes →</a>' + (core ? '<a class="btn" href="' + lessonUrl(core) + '">Track 2: core MCP & security →</a>' : '') + '<span class="resume" id="resume" hidden></span></p>' +
     '<div class="practice">' +
-      '<a class="pcard" href="/exam/"><strong>Final exam</strong><span>20 questions weighted like the real MCPA domains, with a readiness score and a link back to every weak spot.</span></a>' +
+      '<a class="pcard" href="/exam/"><strong>Final exam</strong><span>20 questions weighted like the real MCPA domains, drawn from both tracks, with a readiness score and links back to every weak spot.</span></a>' +
       '<a class="pcard" href="/review/"><strong>Review deck</strong><span>Every question you miss comes back after 1, 3 and 7 days until it sticks.</span></a>' +
       '<a class="pcard" href="/reference-server.mjs" download><strong>Reference server</strong><span>One Node file, no dependencies. Every test command in the course runs against it: <code>node reference-server.mjs</code></span></a>' +
     '</div>' +
-    '<ol class="lesson-grid">' + LESSONS.map((l, i) =>
-      '<li><a class="lcard" href="' + lessonUrl(l) + '" data-lesson="' + l.id + '"><span class="lc-top"><span class="n">' + String(i).padStart(2, '0') + '</span><span class="chip ' + l.tag + '">' + esc(l.tagLabel) + '</span><span class="ok"></span></span>' +
-      '<strong>' + esc(l.short) + '</strong><span class="lc-d">' + esc(l.lede) + '</span></a></li>').join('') + '</ol>' +
-    '<p class="foot">Built from the public <a href="https://modelcontextprotocol.io/specification/2026-07-28">MCP specification, revision 2026-07-28</a>. Payloads marked as verbatim come from the spec; others are labelled illustrative. When this page and the spec disagree, the spec wins.</p>';
+    TRACKS.filter(t => ALL.some(l => l.track === t.id)).map(trackGrid).join('') +
+    '<p class="foot">Built from the public <a href="https://modelcontextprotocol.io/specification/2026-07-28">MCP specification, revision 2026-07-28</a>. Payloads marked as verbatim come from the spec; others are labelled illustrative. Stories are hypothetical scenarios. When this site and the spec disagree, the spec wins.</p>';
 }
 
 function pageHTML(opts) {
-  const cur = opts.cur ?? -1;
-  const l = cur >= 0 ? LESSONS[cur] : null;
+  const l = opts.lesson || null;
   const title = l ? l.short + ' · ' + SITE_TITLE : SITE_TITLE;
-  const desc = l ? l.lede : 'A one-change-per-page walkthrough of MCP specification revision 2026-07-28, with diagrams, colour-coded payloads, tests and self-checks.';
-  const prev = l && LESSONS[cur - 1], next = l && LESSONS[cur + 1];
+  const desc = l ? l.lede : 'Learn MCP specification revision 2026-07-28 one lesson per page: real-world stories, diagrams, colour-coded payloads, runnable tests, a final exam and spaced review.';
+  const k = l ? ALL.indexOf(l) : -1, prev = l && ALL[k - 1], next = l && ALL[k + 1];
   return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' +
     '<title>' + esc(title) + '</title><meta name="description" content="' + esc(desc) + '">' +
     '<meta property="og:title" content="' + esc(title) + '"><meta property="og:description" content="' + esc(desc) + '">' +
@@ -154,16 +176,18 @@ function pageHTML(opts) {
     '<link rel="stylesheet" href="/style.css">' +
     (prev ? '<link rel="prev" href="' + lessonUrl(prev) + '">' : '') + (next ? '<link rel="next" href="' + lessonUrl(next) + '">' : '') +
     '</head><body data-page="' + (opts.page || (l ? 'lesson' : 'home')) + '" data-lesson="' + (l ? l.id : '') + '" data-prev="' + (prev ? lessonUrl(prev) : '') + '" data-next="' + (next ? lessonUrl(next) : '') + '">' +
-    '<a class="skip" href="#main">Skip to content</a><header class="top"><div class="top-in"><a class="brand" href="/">MCP 2026-07-28 <small>one change per page</small></a>' +
+    '<a class="skip" href="#main">Skip to content</a><header class="top"><div class="top-in"><a class="brand" href="/">MCP 2026-07-28 <small>one lesson per page</small></a>' +
     '<nav class="toplinks" aria-label="Practice"><a href="/exam/"' + (opts.page === 'exam' ? ' aria-current="page"' : '') + '>Final exam</a><a href="/review/"' + (opts.page === 'review' ? ' aria-current="page"' : '') + '>Review <span id="dueBadge" class="due" hidden></span></a></nav>' +
     (l ? '<button type="button" class="here" id="hereBtn" title="Copy a link to the section you are reading">Copy link to here</button>' : '') +
-    '<div class="prog" aria-live="polite"><span id="progTxt">' + LESSONS.length + ' lessons</span><span class="bar"><i id="progBar"></i></span></div>' +
-    (l ? '<div class="pick"><select id="lessonPick" aria-label="Jump to lesson">' + LESSONS.map((x, i) => '<option value="' + lessonUrl(x) + '"' + (i === cur ? ' selected' : '') + '>' + String(i).padStart(2, '0') + ' · ' + esc(x.short) + '</option>').join('') + '</select></div>' : '') +
+    '<div class="prog" aria-live="polite"><span id="progTxt">' + ALL.length + ' lessons</span><span class="bar"><i id="progBar"></i></span></div>' +
+    (l ? '<div class="pick"><select id="lessonPick" aria-label="Jump to lesson">' + TRACKS.map(t => '<optgroup label="' + esc(t.label + ' · ' + t.name) + '">' + ALL.filter(x => x.track === t.id).map(x => '<option value="' + lessonUrl(x) + '"' + (x === l ? ' selected' : '') + '>' + numOf(x) + ' · ' + esc(x.short) + '</option>').join('') + '</optgroup>').join('') + '</select></div>' : '') +
     '</div></header>' +
     (l
-      ? '<div class="shell"><nav class="rail" aria-label="Lessons"><h2><a href="/">Lessons</a></h2><ol id="railList">' + railHTML(cur) + '</ol>' +
-        '<div class="legend" aria-hidden="true"><div><span class="dot breaking"></span>Breaks a running server</div><div><span class="dot quiet"></span>Fails quietly or needs a tweak</div><div><span class="dot new"></span>New or redesigned</div><div><span class="dot deprecated"></span>Deprecated or shifting</div><div><span class="dot orientation"></span>Orientation and review</div></div></nav>' +
-        '<main id="main">' + lessonBody(cur) + '</main></div>'
+      ? '<div class="shell"><nav class="rail" aria-label="Lessons">' + railHTML(l) +
+        '<div class="legend" aria-hidden="true">' + (l.track === 'core'
+          ? '<div><span class="dot breaking"></span>Security-critical</div><div><span class="dot quiet"></span>Common source of bugs</div><div><span class="dot new"></span>Core concept</div><div><span class="dot deprecated"></span>Ecosystem</div><div><span class="dot orientation"></span>Orientation</div>'
+          : '<div><span class="dot breaking"></span>Breaks a running server</div><div><span class="dot quiet"></span>Fails quietly or needs a tweak</div><div><span class="dot new"></span>New or redesigned</div><div><span class="dot deprecated"></span>Deprecated or shifting</div><div><span class="dot orientation"></span>Orientation and review</div>') + '</div></nav>' +
+        '<main id="main">' + lessonBody(l) + '</main></div>'
       : '<main class="home" id="main">' + (opts.body || indexBody()) + '</main>') +
     '<div class="toast" id="toast" role="status" hidden></div><script src="/app.js" defer></script></body></html>';
 }
