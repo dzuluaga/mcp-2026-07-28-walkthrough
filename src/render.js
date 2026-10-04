@@ -4,11 +4,11 @@ const slug = s => String(s).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0
 
 /* Two tracks share one site: the July changes, then core MCP & security */
 const TRACKS = [
-  { id: 'changes', name: 'What changed in 2026-07-28', label: 'Track 1', base: '/', blurb: 'Fourteen short lessons on the July 2026 revision: what changed, why, the wire flow, colour-coded payloads before and after, what breaks on an existing server, and how to test it.' },
-  { id: 'core', name: 'Core MCP & Security', label: 'Track 2', base: '/core/', blurb: 'The rest of the exam: hosts, clients and servers, the primitives, a tool call end to end, transports, authorization, the named attacks, consent, and the ecosystem.' },
+  { id: 'core', name: 'Core MCP & Security', label: 'Track 1', base: '/core/', blurb: 'Start here. How MCP works today, with no legacy content: hosts, clients and servers, the primitives, a tool call end to end, transports, authorization, the named attacks, consent, and the ecosystem.' },
+  { id: 'changes', name: 'What changed in 2026-07-28', label: 'Track 2', base: '/', blurb: 'Then this. Each lesson takes one July 2026 change, shows the 2026-07-28 behaviour first, and keeps the old version folded away, so habits from earlier versions get replaced, not reinforced.' },
 ];
-const ALL = LESSONS.map(l => Object.assign(l, { track: l.track || 'changes' }))
-  .concat(typeof CORE_LESSONS !== 'undefined' ? CORE_LESSONS.map(l => Object.assign(l, { track: 'core' })) : []);
+const ALL = (typeof CORE_LESSONS !== 'undefined' ? CORE_LESSONS.map(l => Object.assign(l, { track: 'core' })) : [])
+  .concat(LESSONS.map(l => Object.assign(l, { track: l.track || 'changes' })));
 const trackOf = l => TRACKS.find(t => t.id === l.track);
 const inTrack = l => ALL.filter(x => x.track === l.track);
 const lessonUrl = l => trackOf(l).base + l.id + '/';
@@ -50,7 +50,7 @@ function sectionsOf(l) {
   if (l.what) s.push(['what', l.id === 'wrap' ? 'The migration, in order' : core ? 'How it works' : 'What changed']);
   if (l.why) s.push(['why', core ? 'Why it matters' : 'Why it changed']);
   if (l.seq) s.push(['wire', 'On the wire']);
-  if (l.payloads) s.push(['payloads', core ? 'Payloads' : 'Payloads, before and after']);
+  if (l.payloads) s.push(['payloads', 'Payloads']);
   if (l.impact) s.push(['impact', core ? 'What goes wrong in practice' : 'What it does to an existing server']);
   if (l.test) s.push(['test', 'How to test it']);
   if (quizzesOf(l).length) s.push(['quiz', 'Check yourself']);
@@ -105,19 +105,23 @@ function lessonBody(l) {
   if (l.seq) {
     const s = l.seq, both = s.before && s.after;
     const labels = s.labels || ['Legacy', '2026-07-28'];
-    const prompt = s.prompt || 'This is the old flow. Before you switch to <strong>2026-07-28</strong>, try to predict what disappears and what replaces it.';
+    const eraDiagram = !s.labels;                     // legacy vs current: show current first
+    const showFirst = eraDiagram ? 'after' : 'before';
+    const prompt = s.prompt || 'This is how it works in <strong>2026-07-28</strong>. Switch to <em>Legacy</em> only to see what it replaced.';
     h += sec('wire', T.wire, '<figure class="fig" style="margin:0"><div class="fig-bar"><strong>' + esc(s.title || (both ? 'Same job, two eras' : 'Message flow in 2026-07-28')) + '</strong>' +
-      (both ? '<div class="seg-wrap"><span class="seg-l" id="seg-l">Compare</span><div class="seg" role="group" aria-labelledby="seg-l"><button type="button" data-era="before" aria-pressed="true">' + esc(labels[0]) + '</button><button type="button" data-era="after" aria-pressed="false">' + esc(labels[1]) + '</button></div></div>' : '') +
+      (both ? '<div class="seg-wrap"><span class="seg-l" id="seg-l">Compare</span><div class="seg" role="group" aria-labelledby="seg-l"><button type="button" data-era="before" aria-pressed="' + (showFirst === 'before') + '">' + esc(labels[0]) + '</button><button type="button" data-era="after" aria-pressed="' + (showFirst === 'after') + '">' + esc(labels[1]) + '</button></div></div>' : '') +
       '</div>' + (both ? '<p class="fig-prompt">' + prompt + '</p>' : '') +
-      '<div class="fig-scroll" tabindex="0" role="region" aria-label="Sequence diagram, scrolls sideways">' + (s.before ? '<div data-pane="before">' + seqSVG(s.before) + '</div>' : '') +
-      (s.after ? '<div data-pane="after"' + (both ? ' hidden' : '') + '>' + seqSVG(s.after) + '</div>' : '') + '</div>' +
+      '<div class="fig-scroll" tabindex="0" role="region" aria-label="Sequence diagram, scrolls sideways">' + (s.before ? '<div data-pane="before"' + (both && showFirst !== 'before' ? ' hidden' : '') + '>' + seqSVG(s.before) + '</div>' : '') +
+      (s.after ? '<div data-pane="after"' + (both && showFirst !== 'after' ? ' hidden' : '') + '>' + seqSVG(s.after) + '</div>' : '') + '</div>' +
       '<figcaption class="fig-cap">Solid arrows are requests, dashed are responses or notifications. <span style="color:var(--del)">Red ✕</span> ' + (l.track === 'core' ? 'is the unsafe or failing step' : 'is gone') + '; <span style="color:var(--add)">green</span> ' + (l.track === 'core' ? 'is the step that keeps you safe' : 'is new') + '.</figcaption></figure>');
   }
   if (l.payloads) {
     h += sec('payloads', T.payloads, l.payloads.map(p => {
       const a = 'payload-' + slug(p.t), eras = p.eras || ['legacy', 'modern'];
       return '<div class="pay" id="' + a + '"><p class="pay-t"><a class="hl" href="#' + a + '">' + esc(p.t) + '</a>' + lnk(a, p.t) + '</p>' +
-        (p.before ? codeBlock(p.before, p.before.label || 'before', eras[0]) : '') + (p.after ? codeBlock(p.after, p.after.label || (p.before ? 'after' : ''), eras[1]) : '') +
+        (eras[0] === 'legacy' && p.after
+          ? codeBlock(p.after, p.after.label || '', eras[1]) + (p.before ? '<details class="legacy-fold"><summary>What it used to look like (legacy, for comparison only)</summary>' + codeBlock(p.before, p.before.label || 'before', eras[0]) + '</details>' : '')
+          : (p.before ? codeBlock(p.before, p.before.label || 'before', eras[0]) : '') + (p.after ? codeBlock(p.after, p.after.label || (p.before ? 'after' : ''), eras[1]) : '')) +
         (p.cap ? '<p class="pay-cap">' + esc(p.cap) + '</p>' : '') + '</div>';
     }).join(''));
   }
@@ -148,11 +152,12 @@ function trackGrid(t) {
 }
 
 function indexBody() {
-  const core = ALL.find(l => l.track === 'core');
+  const changes = ALL.find(l => l.track === 'changes');
   return '<p class="eyebrow">Model Context Protocol · specification revision 2026-07-28 · MCPA prep</p>' +
     '<h1>Learn MCP the way you\'ll use it</h1>' +
     '<p class="lede">Two tracks, one lesson per page. Every lesson starts with a real incident, shows the messages on the wire, and ends with tests you can run and questions that catch the classic mistakes.</p>' +
-    '<p class="cta"><a class="btn learn" href="' + lessonUrl(ALL[0]) + '">Track 1: the July changes →</a>' + (core ? '<a class="btn" href="' + lessonUrl(core) + '">Track 2: core MCP & security →</a>' : '') + '<span class="resume" id="resume" hidden></span></p>' +
+    '<p class="cta"><a class="btn learn" href="' + lessonUrl(ALL[0]) + '">Start: ' + esc(trackOf(ALL[0]).name) + ' →</a>' + (changes ? '<a class="btn" href="' + lessonUrl(changes) + '">Then: what changed in July →</a>' : '') + '<span class="resume" id="resume" hidden></span></p>' +
+    '<p class="order-note">Recommended order: Track 1 teaches MCP as it is today, with no legacy content. Track 2 then shows each July 2026 change with the current behaviour first and the old version folded away, so you replace old habits instead of reinforcing them.</p>' +
     '<div class="practice">' +
       '<a class="pcard" href="/exam/"><strong>Final exam</strong><span>20 questions weighted like the real MCPA domains, drawn from both tracks, with a readiness score and links back to every weak spot.</span></a>' +
       '<a class="pcard" href="/review/"><strong>Review deck</strong><span>Every question you miss comes back after 1, 3 and 7 days until it sticks.</span></a>' +

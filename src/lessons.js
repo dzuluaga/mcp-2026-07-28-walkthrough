@@ -54,7 +54,7 @@ const LESSONS = [
           <span style="background:var(--add-bg);color:var(--add);box-shadow:inset 3px 0 0 var(--add)">+ new in 2026-07-28</span>
           <span style="background:var(--hl-bg);color:var(--hl);box-shadow:inset 3px 0 0 var(--hl)">● same field, new rule</span>
         </div></div>
-      <div class="card"><h3>Diagrams</h3><p>Each diagram has a <strong>Legacy / 2026-07-28</strong> switch. Try drawing the new flow from memory before you flip it.</p></div>
+      <div class="card"><h3>Current first</h3><p>Diagrams open on <strong>2026-07-28</strong>, and old payloads are folded away under "What it used to look like". Open them only to compare; the exam tests the current rules.</p></div>
     </div>`,
   quiz: [
     { q: 'Under 2026-07-28, what is an open stdio connection to a server?',

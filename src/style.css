@@ -379,3 +379,10 @@
   .prose table.atk { width: 100%; border-collapse: collapse; font-size: 14.5px; margin: 6px 0 14px; display: block; overflow-x: auto; }
   .atk th { text-align: left; font: 600 11.5px var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 8px 10px; border-bottom: 1.5px solid var(--rule-2); }
   .atk td { padding: 10px; border-bottom: 1px solid var(--rule); vertical-align: top; min-width: 160px; line-height: 1.45; }
+
+  /* legacy content folded away */
+  .legacy-fold { margin-top: 10px; border: 1px dashed var(--control); border-radius: 8px; padding: 0 12px; }
+  .legacy-fold summary { cursor: pointer; padding: 9px 0; font-size: 13.5px; color: var(--ink-2); }
+  .legacy-fold[open] { padding-bottom: 12px; }
+  .legacy-fold .code-wrap { opacity: .9; }
+  .order-note { max-width: 70ch; font-size: 14.5px; color: var(--ink-2); margin: -20px 0 32px; }
