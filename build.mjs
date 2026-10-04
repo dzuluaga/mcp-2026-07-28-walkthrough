@@ -18,7 +18,7 @@ const write = (p, s) => { const u = new URL(p, out); fs.mkdirSync(new URL('.', u
 
 const B = BASE.slice(1) + '/';   // e.g. 'mcpa/'
 write(B + 'index.html', pageHTML({}));
-ALL.forEach(l => write(lessonUrl(l).slice(1) + 'index.html', pageHTML({ lesson: l })));
+ALL.forEach(l => write(lessonUrl(l).slice(1) + '/index.html', pageHTML({ lesson: l })));
 write('404.html', pageHTML({ body: '<h1>That page isn\'t here</h1><p class="lede">The lesson may have been renamed. <a href="' + BASE + '/">Go to the contents</a>.</p>' }));
 write(B + 'exam/index.html', pageHTML({ page: 'exam', body: '<p class="eyebrow">Final exam · MCP 2026-07-28</p><h1>Are you ready?</h1><div id="exam" class="practice-app"><noscript>The exam needs JavaScript.</noscript></div>' }));
 write(B + 'review/index.html', pageHTML({ page: 'review', body: '<p class="eyebrow">Review deck · spaced repetition</p><h1>Bring back what you missed</h1><div id="review" class="practice-app"><noscript>The review deck needs JavaScript.</noscript></div>' }));
