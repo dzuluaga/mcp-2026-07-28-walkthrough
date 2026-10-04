@@ -2,5 +2,17 @@
   "buildCommand": "node build.mjs",
   "outputDirectory": "dist",
   "cleanUrls": true,
-  "trailingSlash": true
+  "trailingSlash": true,
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/mcpa/",
+      "permanent": false
+    },
+    {
+      "source": "/:path((?!mcpa(?:/|$)).*)",
+      "destination": "/mcpa/:path",
+      "permanent": true
+    }
+  ]
 }

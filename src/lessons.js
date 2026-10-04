@@ -2,7 +2,7 @@
 const S = 'https://modelcontextprotocol.io/specification/2026-07-28';
 
 const TEST_SETUP = `# 1. In a SECOND terminal, start the reference server (Node 18+, no dependencies)
-curl -sO https://mcp-2026-07-28-walkthrough.vercel.app/reference-server.mjs
+curl -sO https://www.diegozuluaga.dev/mcpa/reference-server.mjs
 node reference-server.mjs                 # http://localhost:3000/mcp, logs appear here
 
 # 2. In THIS terminal, define the helper every test uses (bash or zsh)

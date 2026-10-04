@@ -1,11 +1,12 @@
 /* ---------- page rendering (runs at build time and in the browser) ---------- */
 const SITE_TITLE = 'MCP 2026-07-28 Walkthrough';
+const BASE = '/mcpa';   // served at diegozuluaga.dev/mcpa/
 const slug = s => String(s).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
 
 /* Two tracks share one site: the July changes, then core MCP & security */
 const TRACKS = [
-  { id: 'core', name: 'Core MCP & Security', label: 'Track 1', base: '/core/', blurb: 'Start here. How MCP works today, with no legacy content: hosts, clients and servers, the primitives, a tool call end to end, transports, authorization, the named attacks, consent, and the ecosystem.' },
-  { id: 'changes', name: 'What changed in 2026-07-28', label: 'Track 2', base: '/', blurb: 'Then this. Each lesson takes one July 2026 change, shows the 2026-07-28 behaviour first, and keeps the old version folded away, so habits from earlier versions get replaced, not reinforced.' },
+  { id: 'core', name: 'Core MCP & Security', label: 'Track 1', base: BASE + '/core/', blurb: 'Start here. How MCP works today, with no legacy content: hosts, clients and servers, the primitives, a tool call end to end, transports, authorization, the named attacks, consent, and the ecosystem.' },
+  { id: 'changes', name: 'What changed in 2026-07-28', label: 'Track 2', base: BASE + '/', blurb: 'Then this. Each lesson takes one July 2026 change, shows the 2026-07-28 behaviour first, and keeps the old version folded away, so habits from earlier versions get replaced, not reinforced.' },
 ];
 const ALL = (typeof CORE_LESSONS !== 'undefined' ? CORE_LESSONS.map(l => Object.assign(l, { track: 'core' })) : [])
   .concat(LESSONS.map(l => Object.assign(l, { track: l.track || 'changes' })));
@@ -139,9 +140,9 @@ function lessonBody(l) {
   const k = ALL.indexOf(l), prev = ALL[k - 1], next = ALL[k + 1];
   const crossNext = next && next.track !== l.track, crossPrev = prev && prev.track !== l.track;
   h += '<div class="nav">' +
-    (prev ? '<a class="btn prev" rel="prev" href="' + lessonUrl(prev) + '"><small>← ' + (crossPrev ? 'Back to ' + esc(trackOf(prev).label) : 'Previous') + '</small>' + esc(prev.short) + '</a>' : '<a class="btn prev" href="/"><small>← Contents</small>All lessons</a>') +
+    (prev ? '<a class="btn prev" rel="prev" href="' + lessonUrl(prev) + '"><small>← ' + (crossPrev ? 'Back to ' + esc(trackOf(prev).label) : 'Previous') + '</small>' + esc(prev.short) + '</a>' : '<a class="btn prev" href="' + BASE + '/"><small>← Contents</small>All lessons</a>') +
     '<button type="button" class="btn learn" id="learnBtn" data-id="' + l.id + '">Mark as learned</button>' +
-    (next ? '<a class="btn next" rel="next" href="' + lessonUrl(next) + '"><small>' + (crossNext ? 'Start ' + esc(trackOf(next).label) + ' →' : 'Next →') + '</small>' + esc(crossNext ? trackOf(next).name : next.short) + '</a>' : '<a class="btn next" href="/exam/"><small>Done →</small>Take the final exam</a>') +
+    (next ? '<a class="btn next" rel="next" href="' + lessonUrl(next) + '"><small>' + (crossNext ? 'Start ' + esc(trackOf(next).label) + ' →' : 'Next →') + '</small>' + esc(crossNext ? trackOf(next).name : next.short) + '</a>' : '<a class="btn next" href="' + BASE + '/exam/"><small>Done →</small>Take the final exam</a>') +
     '</div><p class="kbd">Tip: ← and → move between lessons. Hover any heading and press # to copy a link to it.</p>';
   return h;
 }
@@ -161,9 +162,9 @@ function indexBody() {
     '<p class="cta"><a class="btn learn" href="' + lessonUrl(ALL[0]) + '">Start: ' + esc(trackOf(ALL[0]).name) + ' →</a>' + (changes ? '<a class="btn" href="' + lessonUrl(changes) + '">Then: what changed in July →</a>' : '') + '<span class="resume" id="resume" hidden></span></p>' +
     '<p class="order-note">Recommended order: Track 1 teaches MCP as it is today, with no legacy content. Track 2 then shows each July 2026 change with the current behaviour first and the old version folded away, so you replace old habits instead of reinforcing them.</p>' +
     '<div class="practice">' +
-      '<a class="pcard" href="/exam/"><strong>Final exam</strong><span>20 questions weighted like the real MCPA domains, drawn from both tracks, with a readiness score and links back to every weak spot.</span></a>' +
-      '<a class="pcard" href="/review/"><strong>Review deck</strong><span>Every question you miss comes back after 1, 3 and 7 days until it sticks.</span></a>' +
-      '<a class="pcard" href="/reference-server.mjs" download><strong>Reference server</strong><span>One Node file, no dependencies. Every test command in the course runs against it: <code>node reference-server.mjs</code></span></a>' +
+      '<a class="pcard" href="' + BASE + '/exam/"><strong>Final exam</strong><span>20 questions weighted like the real MCPA domains, drawn from both tracks, with a readiness score and links back to every weak spot.</span></a>' +
+      '<a class="pcard" href="' + BASE + '/review/"><strong>Review deck</strong><span>Every question you miss comes back after 1, 3 and 7 days until it sticks.</span></a>' +
+      '<a class="pcard" href="' + BASE + '/reference-server.mjs" download><strong>Reference server</strong><span>One Node file, no dependencies. Every test command in the course runs against it: <code>node reference-server.mjs</code></span></a>' +
     '</div>' +
     TRACKS.filter(t => ALL.some(l => l.track === t.id)).map(trackGrid).join('') +
     '<p class="foot">Built from the public <a href="https://modelcontextprotocol.io/specification/2026-07-28">MCP specification, revision 2026-07-28</a>. Payloads marked as verbatim come from the spec; others are labelled illustrative. Stories are hypothetical scenarios. When this site and the spec disagree, the spec wins.</p>';
@@ -180,11 +181,11 @@ function pageHTML(opts) {
     '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232340B8%22/%3E%3Cpath d=%22M8 11h16M8 16h10M8 21h13%22 stroke=%22white%22 stroke-width=%222.5%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">' +
     '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
     '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">' +
-    '<link rel="stylesheet" href="/style.css">' +
+    '<link rel="stylesheet" href="' + BASE + '/style.css">' +
     (prev ? '<link rel="prev" href="' + lessonUrl(prev) + '">' : '') + (next ? '<link rel="next" href="' + lessonUrl(next) + '">' : '') +
     '</head><body data-page="' + (opts.page || (l ? 'lesson' : 'home')) + '" data-lesson="' + (l ? l.id : '') + '" data-prev="' + (prev ? lessonUrl(prev) : '') + '" data-next="' + (next ? lessonUrl(next) : '') + '">' +
-    '<a class="skip" href="#main">Skip to content</a><header class="top"><div class="top-in"><a class="brand" href="/">MCP 2026-07-28 <small>one lesson per page</small></a>' +
-    '<nav class="toplinks" aria-label="Practice"><a href="/exam/"' + (opts.page === 'exam' ? ' aria-current="page"' : '') + '>Final exam</a><a href="/review/"' + (opts.page === 'review' ? ' aria-current="page"' : '') + '>Review <span id="dueBadge" class="due" hidden></span></a></nav>' +
+    '<a class="skip" href="#main">Skip to content</a><header class="top"><div class="top-in"><a class="brand" href="' + BASE + '/">MCP 2026-07-28 <small>one lesson per page</small></a>' +
+    '<nav class="toplinks" aria-label="Practice"><a href="' + BASE + '/exam/"' + (opts.page === 'exam' ? ' aria-current="page"' : '') + '>Final exam</a><a href="' + BASE + '/review/"' + (opts.page === 'review' ? ' aria-current="page"' : '') + '>Review <span id="dueBadge" class="due" hidden></span></a></nav>' +
     (l ? '<button type="button" class="here" id="hereBtn" title="Copy a link to the section you are reading">Copy link to here</button>' : '') +
     '<div class="prog" aria-live="polite"><span id="progTxt">' + ALL.length + ' lessons</span><span class="bar"><i id="progBar"></i></span></div>' +
     (l ? '<div class="pick"><select id="lessonPick" aria-label="Jump to lesson">' + TRACKS.map(t => '<optgroup label="' + esc(t.label + ' · ' + t.name) + '">' + ALL.filter(x => x.track === t.id).map(x => '<option value="' + lessonUrl(x) + '"' + (x === l ? ' selected' : '') + '>' + numOf(x) + ' · ' + esc(x.short) + '</option>').join('') + '</optgroup>').join('') + '</select></div>' : '') +
@@ -196,5 +197,5 @@ function pageHTML(opts) {
           : '<div><span class="dot breaking"></span>Breaks a running server</div><div><span class="dot quiet"></span>Fails quietly or needs a tweak</div><div><span class="dot new"></span>New or redesigned</div><div><span class="dot deprecated"></span>Deprecated or shifting</div><div><span class="dot orientation"></span>Orientation and review</div>') + '</div></nav>' +
         '<main id="main">' + lessonBody(l) + '</main></div>'
       : '<main class="home" id="main">' + (opts.body || indexBody()) + '</main>') +
-    '<div class="toast" id="toast" role="status" hidden></div><script src="/app.js" defer></script></body></html>';
+    '<div class="toast" id="toast" role="status" hidden></div><script src="' + BASE + '/app.js" defer></script></body></html>';
 }

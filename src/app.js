@@ -142,7 +142,7 @@ function shuffled(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { c
 function cardHTML(item, picked, n, total) {
   const { l, q, qi } = item, letters = 'ABCD', answered = picked !== undefined;
   const order = item.order || (item.order = shuffled([...q.o.keys()]));
-  return '<div class="pq"><p class="pq-meta"><span>' + (n !== undefined ? 'Question ' + (n + 1) + ' of ' + total : '') + '</span><a href="/' + l.id + '/#q' + (qi + 1) + '">' + esc(l.short) + '</a></p>' +
+  return '<div class="pq"><p class="pq-meta"><span>' + (n !== undefined ? 'Question ' + (n + 1) + ' of ' + total : '') + '</span><a href="' + BASE + '/' + l.id + '/#q' + (qi + 1) + '">' + esc(l.short) + '</a></p>' +
     (total ? '<div class="pq-bar"><i style="width:' + (100 * (n + (answered ? 1 : 0)) / total) + '%"></i></div>' : '') +
     '<p class="q-t">' + esc(q.q) + '</p><div class="opts">' +
     order.map((oi, pos) => '<button type="button" class="opt' + (answered ? (oi === q.a ? ' right' : oi === picked ? ' wrong' : '') : '') + '" data-p="' + oi + '"' + (answered ? ' disabled' : '') + '><span class="opt-l" aria-hidden="true">' + letters[pos] + '</span>' + esc(q.o[oi]) + '</button>').join('') +
@@ -183,8 +183,8 @@ if (examEl) {
       : ['not-yet', 'Not yet.', 'Work through the lessons you missed, then use the review deck daily for a week before retaking.'];
     examEl.innerHTML = '<div class="result ' + verdict[0] + '"><p class="score">' + score + '<small>%</small></p><div><p class="verdict">' + verdict[1] + '</p><p>' + verdict[2] + '</p></div></div>' +
       '<h2 class="sub">By domain</h2><ul class="dom-bars">' + byD.map(x => '<li><span>' + x.d.name + ' <small>(' + x.d.weight + '% of MCPA)</small></span><span class="db"><i style="width:' + (x.n ? 100 * x.ok / x.n : 0) + '%"></i></span><b>' + x.ok + '/' + x.n + '</b></li>').join('') + '</ul>' +
-      (missed.length ? '<h2 class="sub">Revisit</h2><ul class="missed">' + missed.map(([it]) => '<li><a href="' + lessonUrl(it.l) + '#q' + (it.qi + 1) + '">' + esc(it.l.short) + '</a> ' + esc(it.q.q) + '</li>').join('') + '</ul><p class="note-sm">All ' + missed.length + ' are now in your <a href="/review/">review deck</a>.</p>' : '<p class="note-sm">A perfect run. Try again for a different set of questions.</p>') +
-      '<p class="cta"><button type="button" class="btn learn" data-start="1">Take it again</button><a class="btn" href="/">Back to the lessons</a></p>';
+      (missed.length ? '<h2 class="sub">Revisit</h2><ul class="missed">' + missed.map(([it]) => '<li><a href="' + lessonUrl(it.l) + '#q' + (it.qi + 1) + '">' + esc(it.l.short) + '</a> ' + esc(it.q.q) + '</li>').join('') + '</ul><p class="note-sm">All ' + missed.length + ' are now in your <a href="' + BASE + '/review/">review deck</a>.</p>' : '<p class="note-sm">A perfect run. Try again for a different set of questions.</p>') +
+      '<p class="cta"><button type="button" class="btn learn" data-start="1">Take it again</button><a class="btn" href="' + BASE + '/">Back to the lessons</a></p>';
     window.scrollTo(0, 0);
   }
   examEl.addEventListener('click', e => {
@@ -210,7 +210,7 @@ if (revEl) {
     if (!queue.length) {
       const next = all.map(k => state.review[k].due).sort((a, b) => a - b)[0];
       revEl.innerHTML = '<p class="lede">' + (all.length ? 'Nothing due right now. ' + all.length + ' question' + (all.length > 1 ? 's are' : ' is') + ' in your deck; the next comes back on <b>' + new Date(next).toLocaleDateString() + '</b>.' : 'Your deck is empty. Every question you miss, in a lesson or the final exam, lands here and comes back after 1, 3 and 7 days until you get it right three times in a row.') + '</p>' +
-        '<p class="cta"><a class="btn learn" href="/exam/">Take the final exam</a><a class="btn" href="/">Back to the lessons</a></p>';
+        '<p class="cta"><a class="btn learn" href="' + BASE + '/exam/">Take the final exam</a><a class="btn" href="' + BASE + '/">Back to the lessons</a></p>';
       return;
     }
     revEl.innerHTML = '<p class="lede">' + queue.length + ' due today. Get one right and it comes back later; get it wrong and it returns tomorrow.</p><div id="card"></div>';
