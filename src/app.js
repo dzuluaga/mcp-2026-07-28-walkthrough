@@ -142,7 +142,7 @@ function shuffled(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { c
 function cardHTML(item, picked, n, total) {
   const { l, q, qi } = item, letters = 'ABCD', answered = picked !== undefined;
   const order = item.order || (item.order = shuffled([...q.o.keys()]));
-  return '<div class="pq"><p class="pq-meta"><span>' + (n !== undefined ? 'Question ' + (n + 1) + ' of ' + total : '') + '</span><a href="' + BASE + '/' + l.id + '/#q' + (qi + 1) + '">' + esc(l.short) + '</a></p>' +
+  return '<div class="pq"><p class="pq-meta"><span>' + (n !== undefined ? 'Question ' + (n + 1) + ' of ' + total : '') + '</span><a href="' + lessonUrl(l) + '#q' + (qi + 1) + '">' + esc(l.short) + '</a></p>' +
     (total ? '<div class="pq-bar"><i style="width:' + (100 * (n + (answered ? 1 : 0)) / total) + '%"></i></div>' : '') +
     '<p class="q-t">' + esc(q.q) + '</p><div class="opts">' +
     order.map((oi, pos) => '<button type="button" class="opt' + (answered ? (oi === q.a ? ' right' : oi === picked ? ' wrong' : '') : '') + '" data-p="' + oi + '"' + (answered ? ' disabled' : '') + '><span class="opt-l" aria-hidden="true">' + letters[pos] + '</span>' + esc(q.o[oi]) + '</button>').join('') +
