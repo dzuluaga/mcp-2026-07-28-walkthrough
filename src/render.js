@@ -71,8 +71,14 @@ function railHTML(cur) {
 }
 
 /* Feedback address: written obfuscated in the HTML, assembled in the browser (see app.js) */
-function feedbackLine(subject) {
-  return '<p class="fb-line">Feedback or a correction? Email <a class="fb-mail" data-subject="' + esc(subject) + '">diego [at] diegozuluaga [dot] dev</a></p>';
+const REPO = 'https://github.com/dzuluaga/mcp-2026-07-28-walkthrough';
+const SITE = 'https://www.diegozuluaga.dev';
+function feedbackLine(subject, path) {
+  const url = SITE + (path || BASE + '/');
+  const issue = REPO + '/issues/new?title=' + encodeURIComponent(subject) +
+    '&body=' + encodeURIComponent('Page: ' + url + '\n\nWhat is wrong or unclear:\n\nWhat the spec says (link if you have one):\n');
+  return '<p class="fb-line">Feedback or a correction? Email <a class="fb-mail" data-subject="' + esc(subject) + '">diego [at] diegozuluaga [dot] dev</a>' +
+    ' or <a href="' + issue + '" target="_blank" rel="noopener">open an issue on GitHub</a>.</p>';
 }
 
 function sec(key, title, html) {
@@ -142,7 +148,7 @@ function lessonBody(l) {
   const Q = quizzesOf(l);
   if (Q.length) h += sec('quiz', T.quiz, '<p class="quiz-note">Answer all ' + Q.length + ' correctly and this lesson is marked as learned.</p>' + Q.map((q, qi) => quizHTML(l, q, qi)).join(''));
   if (l.links) h += sec('spec', T.spec, '<div class="links">' + l.links.map(([t, u]) => '<a href="' + u + '" target="_blank" rel="noopener">' + esc(t) + ' ↗</a>').join('') + '</div>');
-  h += feedbackLine('[MCPA course] ' + trackOf(l).label + ' · ' + l.short);
+  h += feedbackLine('[MCPA course] ' + trackOf(l).label + ' · ' + l.short, lessonUrl(l));
   const k = ALL.indexOf(l), prev = ALL[k - 1], next = ALL[k + 1];
   const crossNext = next && next.track !== l.track, crossPrev = prev && prev.track !== l.track;
   h += '<div class="nav">' +
@@ -173,7 +179,7 @@ function indexBody() {
       '<a class="pcard" href="' + BASE + '/reference-server.mjs" download><strong>Reference server</strong><span>One Node file, no dependencies. Every test command in the course runs against it: <code>node reference-server.mjs</code></span></a>' +
     '</div>' +
     TRACKS.filter(t => ALL.some(l => l.track === t.id)).map(trackGrid).join('') +
-    '<p class="foot">Built from the public <a href="https://modelcontextprotocol.io/specification/2026-07-28">MCP specification, revision 2026-07-28</a>. Payloads marked as verbatim come from the spec; others are labelled illustrative. Stories are hypothetical scenarios. When this site and the spec disagree, the spec wins.</p>' +
+    '<p class="foot">Built from the public <a href="https://modelcontextprotocol.io/specification/2026-07-28">MCP specification, revision 2026-07-28</a>. Source on <a href="' + REPO + '">GitHub</a>. Payloads marked as verbatim come from the spec; others are labelled illustrative. Stories are hypothetical scenarios. When this site and the spec disagree, the spec wins.</p>' +
     feedbackLine('[MCPA course] General feedback');
 }
 
