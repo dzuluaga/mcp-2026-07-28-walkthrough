@@ -240,5 +240,13 @@ if (revEl) {
   show();
 }
 
+/* feedback links: build the address here so it isn't plain text in the HTML */
+document.querySelectorAll('.fb-mail').forEach(a => {
+  const addr = ['diego', 'diegozuluaga.dev'].join('@');
+  a.textContent = addr;
+  a.href = 'mailto:' + addr + '?subject=' + encodeURIComponent(a.dataset.subject || '[MCPA course]') +
+    '&body=' + encodeURIComponent('Page: ' + location.href + '\n\n');
+});
+
 paintQuizzes();
 paintProgress();
