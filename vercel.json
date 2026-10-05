@@ -2,16 +2,11 @@
   "buildCommand": "node build.mjs",
   "outputDirectory": "dist",
   "cleanUrls": true,
+  "rewrites": [
+    { "source": "/mcpa/api/:path*", "destination": "/api/:path*" }
+  ],
   "redirects": [
-    {
-      "source": "/",
-      "destination": "/mcpa/",
-      "permanent": false
-    },
-    {
-      "source": "/:path((?!mcpa(?:/|$)).*)",
-      "destination": "/mcpa/:path",
-      "permanent": true
-    }
+    { "source": "/", "destination": "/mcpa/", "permanent": false },
+    { "source": "/:path((?!mcpa(?:/|$)|api/).*)", "destination": "/mcpa/:path", "permanent": true }
   ]
 }

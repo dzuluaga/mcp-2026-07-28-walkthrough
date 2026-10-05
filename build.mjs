@@ -21,6 +21,7 @@ write(B + 'index.html', pageHTML({}));
 ALL.forEach(l => write(lessonUrl(l).slice(1) + '/index.html', pageHTML({ lesson: l })));
 write('404.html', pageHTML({ body: '<h1>That page isn\'t here</h1><p class="lede">The lesson may have been renamed. <a href="' + BASE + '/">Go to the contents</a>.</p>' }));
 write(B + 'exam/index.html', pageHTML({ page: 'exam', body: '<p class="eyebrow">Final exam · MCP 2026-07-28</p><h1>Are you ready?</h1><div id="exam" class="practice-app"><noscript>The exam needs JavaScript.</noscript></div>' }));
+write(B + 'progress/index.html', pageHTML({ page: 'progress', body: '<p class="eyebrow">Your results</p><h1>Progress</h1><div id="progress-app" class="practice-app"><noscript>The progress page needs JavaScript.</noscript></div><h2 class="sub">Sync across devices</h2><div id="sync-panel" class="sync-panel"></div>' }));
 write(B + 'review/index.html', pageHTML({ page: 'review', body: '<p class="eyebrow">Review deck · spaced repetition</p><h1>Bring back what you missed</h1><div id="review" class="practice-app"><noscript>The review deck needs JavaScript.</noscript></div>' }));
 write(B + 'reference-server.mjs', fs.readFileSync(new URL('./server/reference-server.mjs', import.meta.url), 'utf8'));
 write(B + 'style.css', src('style.css'));
