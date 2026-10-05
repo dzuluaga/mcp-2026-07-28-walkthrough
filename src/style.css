@@ -405,6 +405,13 @@
   .store-warn { background: var(--del-bg); color: var(--ink); border-bottom: 1px solid var(--del); padding: 10px 20px; font-size: 14.5px; text-align: center; }
   .resume-box { background: var(--hl-bg); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; }
   .resume-box p { margin: 0 0 8px; }
+  .overall { margin: 4px 0 20px; max-width: 760px; }
+  .overall-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .overall-head b { font-family: var(--display); font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .overall-head span { color: var(--ink-2); font-size: 14.5px; }
+  .overall-bar { height: 12px; background: var(--sunk); border-radius: 6px; overflow: hidden; }
+  .overall-bar i { display: block; height: 100%; background: var(--add); border-radius: 6px; transition: width .4s ease; }
+  .overall .note-sm { margin: 8px 0 0; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 6px 0 24px; }
   .tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
   .tile b { font-family: var(--display); font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
