@@ -355,7 +355,12 @@ function paintProgressPage() {
   const exams = state.exams || [], best = exams.reduce((m, x) => Math.max(m, x.score), 0), due = dueKeys().length;
   const dom = DOMAINS.map(d => { const qs = qAll.filter(x => LESSON_DOMAIN[x.l.id] === d.key); const r = qs.filter(x => state.quiz[x.k] === x.q.a).length; return { d, r, n: qs.length }; });
   const weakest = dom.filter(x => x.n).sort((a, b) => a.r / a.n - b.r / b.n)[0];
+  const nLearned = ALL.filter(l => state.learned.includes(l.id)).length;
+  const overall = Math.round(50 * nLearned / ALL.length + 50 * right.length / qAll.length);   // half lessons, half questions
   el.innerHTML =
+    '<div class="overall"><div class="overall-head"><b>' + overall + '%</b><span>complete</span></div>' +
+      '<div class="overall-bar" role="progressbar" aria-label="Overall completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + overall + '"><i style="width:' + overall + '%"></i></div>' +
+      '<p class="note-sm">Half lessons marked learned, half lesson questions answered correctly.</p></div>' +
     '<div class="tiles">' +
       '<div class="tile"><b>' + ALL.filter(l => state.learned.includes(l.id)).length + '<small>/' + ALL.length + '</small></b><span>lessons learned</span></div>' +
       '<div class="tile"><b>' + right.length + '<small>/' + qAll.length + '</small></b><span>questions right</span></div>' +
