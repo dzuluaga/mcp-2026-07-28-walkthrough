@@ -14,3 +14,8 @@ No dependencies. Content lives in `src/lessons.js`; rendering in `src/render.js`
 ## Deploy
 
     vercel --prod
+
+## License
+
+Code: [MIT](LICENSE). Course content: [CC BY 4.0](LICENSE-CONTENT). Reuse it freely with credit:
+"MCPA Exam Prep" by Diego Zuluaga, https://www.diegozuluaga.dev/mcpa.
