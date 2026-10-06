@@ -79,7 +79,7 @@ function feedbackLine(subject, path) {
     '&body=' + encodeURIComponent('Page: ' + url + '\n\nWhat is wrong or unclear:\n\nWhat the spec says (link if you have one):\n');
   return '<p class="fb-line">Feedback or a correction? Email <a class="fb-mail" data-subject="' + esc(subject) + '">diego [at] diegozuluaga [dot] dev</a>' +
     ' or <a href="' + issue + '" target="_blank" rel="noopener">open an issue on GitHub</a>.</p>' +
-    '<p class="fb-line">© 2026 Diego Zuluaga · Content <a href="https://creativecommons.org/licenses/by/4.0/" rel="license noopener" target="_blank">CC BY 4.0</a> · Code <a href="' + REPO + '/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></p>';
+    '<p class="fb-line">Content <a href="https://creativecommons.org/licenses/by/4.0/" rel="license noopener" target="_blank">CC BY 4.0</a> · Code <a href="' + REPO + '/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></p>';
 }
 
 function sec(key, title, html) {
