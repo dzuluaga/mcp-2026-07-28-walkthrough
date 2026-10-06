@@ -25,6 +25,10 @@ write(B + 'progress/index.html', pageHTML({ page: 'progress', body: '<p class="e
 write(B + 'review/index.html', pageHTML({ page: 'review', body: '<p class="eyebrow">Review deck · spaced repetition</p><h1>Bring back what you missed</h1><div id="review" class="practice-app"><noscript>The review deck needs JavaScript.</noscript></div>' }));
 write(B + 'reference-server.mjs', fs.readFileSync(new URL('./server/reference-server.mjs', import.meta.url), 'utf8'));
 write(B + 'style.css', src('style.css'));
+const today = new Date().toISOString().slice(0, 10);
+const urls = ['/', ...ALL.map(lessonUrl).map(u => u.slice(BASE.length)), '/exam', '/review', '/progress'];
+write(B + 'sitemap.xml', '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+  urls.map(u => '  <url><loc>https://www.diegozuluaga.dev' + BASE + (u === '/' ? '/' : u) + '</loc><lastmod>' + today + '</lastmod></url>').join('\n') + '\n</urlset>\n');
 write(B + 'app.js', '(() => {\n' + shared + '\n' + src('app.js') + '\n})();\n');
 
 console.log('Built', ALL.length, 'lessons into dist/');

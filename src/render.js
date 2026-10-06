@@ -185,12 +185,27 @@ function indexBody() {
 
 function pageHTML(opts) {
   const l = opts.lesson || null;
-  const title = l ? l.short + ' · ' + SITE_TITLE : SITE_TITLE;
-  const desc = l ? l.lede : 'Learn MCP specification revision 2026-07-28 one lesson per page: real-world stories, diagrams, colour-coded payloads, runnable tests, a final exam and spaced review.';
+  const PAGE_TITLES = { exam: 'MCPA practice exam', review: 'MCPA review deck', progress: 'Your MCPA progress' };
+  const title = l ? l.short + ' · MCPA prep (MCP 2026-07-28)'
+    : PAGE_TITLES[opts.page] ? PAGE_TITLES[opts.page] + ' · ' + SITE_TITLE
+    : opts.body ? SITE_TITLE : 'MCPA Exam Prep: Model Context Protocol (2026-07-28) · free course';
+  const desc = l ? l.lede : 'Free MCPA (Model Context Protocol Associate) exam prep for MCP 2026-07-28: 23 one-page lessons with real-world stories, diagrams, colour-coded payloads, audio overviews, a practice exam weighted like the real domains, and spaced review.';
+  const path = l ? lessonUrl(l) : opts.page ? BASE + '/' + opts.page : opts.body ? '' : BASE + '/';
+  const canonical = path ? SITE + path : '';
   const k = l ? ALL.indexOf(l) : -1, prev = l && ALL[k - 1], next = l && ALL[k + 1];
   return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' +
     '<title>' + esc(title) + '</title><meta name="description" content="' + esc(desc) + '">' +
     '<meta property="og:title" content="' + esc(title) + '"><meta property="og:description" content="' + esc(desc) + '">' +
+    (canonical ? '<link rel="canonical" href="' + canonical + '"><meta property="og:url" content="' + canonical + '">' : '<meta name="robots" content="noindex">') +
+    '<meta property="og:type" content="' + (l ? 'article' : 'website') + '"><meta property="og:site_name" content="MCPA Exam Prep"><meta name="twitter:card" content="summary">' +
+    (!l && !opts.page && !opts.body ? '<script type="application/ld+json">' + JSON.stringify({
+      '@context': 'https://schema.org', '@type': 'Course', name: 'MCPA Exam Prep: Model Context Protocol (2026-07-28)', description: desc, url: SITE + BASE + '/',
+      provider: { '@type': 'Person', name: 'Diego Zuluaga', url: SITE + '/' }, isAccessibleForFree: true, inLanguage: 'en',
+      educationalCredentialAwarded: 'Model Context Protocol Associate (MCPA) preparation',
+      teaches: ['Model Context Protocol 2026-07-28', 'MCP authorization (OAuth, PKCE, RFC 9728)', 'MCP security and governance', 'MCP architecture and primitives'],
+      hasCourseInstance: { '@type': 'CourseInstance', courseMode: 'online', courseWorkload: 'PT12H' },
+      offers: { '@type': 'Offer', price: 0, priceCurrency: 'USD', category: 'Free' }
+    }).replace(/</g, '\\u003c') + '</script>' : '') +
     '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%232340B8%22/%3E%3Cpath d=%22M8 11h16M8 16h10M8 21h13%22 stroke=%22white%22 stroke-width=%222.5%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">' +
     '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
     '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">' +
