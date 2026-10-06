@@ -17,5 +17,11 @@ No dependencies. Content lives in `src/lessons.js`; rendering in `src/render.js`
 
 ## License
 
-Code: [MIT](LICENSE). Course content: [CC BY 4.0](LICENSE-CONTENT). Reuse it freely with credit:
-"MCPA Exam Prep" by Diego Zuluaga, https://www.diegozuluaga.dev/mcpa.
+This repository is dual-licensed:
+
+- **Code** (`build.mjs`, `api/`, `server/`, `src/app.js`, `src/render.js`, `src/helpers.js`, `src/style.css` and other source files): [MIT](LICENSE).
+- **Course content** (lesson text, stories, diagrams, payload examples, quizzes and explanations, mainly in `src/lessons.js`, `src/core-lessons.js`, `src/extras.js` and `src/practice.js`, and the pages built from them): [CC BY 4.0](LICENSE-CONTENT).
+
+Reuse it freely with credit: "MCPA Exam Prep" by Diego Zuluaga, https://www.diegozuluaga.dev/mcpa.
+
+Excerpts of the Model Context Protocol specification and other third-party material remain under their original licenses.

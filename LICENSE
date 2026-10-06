@@ -1,18 +1,3 @@
-This repository is dual-licensed:
-
-- Code (build.mjs, api/, server/, src/app.js, src/render.js, src/helpers.js,
-  src/style.css and other source files) is licensed under the MIT License below.
-- Course content (lesson text, stories, diagrams, payload examples, quizzes and
-  explanations, mainly in src/lessons.js, src/core-lessons.js, src/extras.js and
-  src/practice.js, and the pages built from them) is licensed under the
-  Creative Commons Attribution 4.0 International License (CC BY 4.0).
-  See LICENSE-CONTENT.
-
-Excerpts of the Model Context Protocol specification and other third-party
-material remain under their original licenses.
-
-------------------------------------------------------------------------------
-
 MIT License
 
 Copyright (c) 2026 Diego Zuluaga
